@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React from "react";
 
-type TabKey = "home" | "gallery" | "profile" | "collection";
+type TabKey = "home" | "gallery" | "collection" | "profile";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "home", label: "홈" },
   { key: "gallery", label: "순간" },
-  { key: "profile", label: "프로필" },
   { key: "collection", label: "수집" },
+  { key: "profile", label: "프로필" },
 ];
 
 export default function TopTabs({
@@ -16,71 +16,51 @@ export default function TopTabs({
   onChange,
 }: {
   value: TabKey;
-  onChange: (key: TabKey) => void;
+  onChange: (t: TabKey) => void;
 }) {
-  const [mounted, setMounted] = useState(false);
-
-  // hash <-> tab 동기화 (배포 링크에서 #collection 같은 것도 가능)
-  useEffect(() => {
-    setMounted(true);
-
-    const fromHash = () => {
-      const h = window.location.hash.replace("#", "");
-      const ok = TABS.some((t) => t.key === h);
-      if (ok) onChange(h as TabKey);
-    };
-
-    fromHash();
-    window.addEventListener("hashchange", fromHash);
-    return () => window.removeEventListener("hashchange", fromHash);
-  }, [onChange]);
-
-  const activeIndex = useMemo(() => TABS.findIndex((t) => t.key === value), [value]);
-
   return (
-    <div className="fixed left-0 right-0 top-0 z-40">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-        <div className="text-sm font-semibold tracking-wide text-white/90">MOMONGA</div>
+    <header className="fixed inset-x-0 top-0 z-50">
+      {/* 상단 배경 */}
+      <div className="pointer-events-none absolute inset-0 border-b border-white/10 bg-black/30 backdrop-blur-xl" />
 
-        <div className="relative rounded-full border border-white/10 bg-white/5 p-1 backdrop-blur">
-          {/* 슬라이딩 배경 */}
-          {mounted && (
-            <div
-              className="absolute top-1 h-[34px] rounded-full bg-white/10 transition-all duration-250"
-              style={{
-                left: `calc(${activeIndex} * 72px + 4px)`,
-                width: "68px",
-              }}
-            />
-          )}
+      <div className="relative mx-auto flex h-16 max-w-6xl items-center px-5">
+        {/* LEFT: 로고 */}
+        <button
+          type="button"
+          onClick={() => onChange("home")}
+          className="z-10 text-sm font-semibold tracking-wide text-white/90 hover:text-white"
+          aria-label="Go Home"
+        >
+          MOMONGA
+        </button>
 
-          <div className="relative flex">
-            {TABS.map((tab) => {
-              const active = tab.key === value;
+        {/* CENTER: 탭 */}
+        <nav className="absolute left-1/2 -translate-x-1/2">
+          <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1 backdrop-blur">
+            {TABS.map((t) => {
+              const active = value === t.key;
               return (
                 <button
-                  key={tab.key}
+                  key={t.key}
                   type="button"
+                  onClick={() => onChange(t.key)}
                   className={[
-                    "h-[34px] w-[72px] rounded-full text-xs transition-colors",
-                    active ? "text-white" : "text-white/70 hover:text-white/90",
+                    "rounded-full px-4 py-2 text-sm transition",
+                    active
+                      ? "bg-white/12 text-white"
+                      : "text-white/60 hover:bg-white/10 hover:text-white/80",
                   ].join(" ")}
-                  onClick={() => {
-                    onChange(tab.key);
-                    // 해시도 바꿔서 링크 공유 가능
-                    window.location.hash = tab.key;
-                  }}
                 >
-                  {tab.label}
+                  {t.label}
                 </button>
               );
             })}
           </div>
-        </div>
-      </div>
+        </nav>
 
-      {/* 상단 얇은 그라데이션 */}
-      <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-    </div>
+        {/* RIGHT: (비워둠) 나중에 로그인/설정 자리 */}
+        <div className="ml-auto w-[120px]" />
+      </div>
+    </header>
   );
 }
