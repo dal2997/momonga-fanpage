@@ -1,2 +1,0 @@
-# momonga-fanpage
-momonga forever
