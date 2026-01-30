@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import GlassCard from "@/components/layout/GlassCard";
 import { CollectItem } from "@/data/collection";
 import { loadCollection, saveCollection } from "@/lib/collectionStore";
+import { fetchCollection } from "@/lib/collectionService";
+import { uploadToMomongaBucket } from "@/lib/storageService";
+
 
 type ViewMode = "collecting" | "collected";
 
@@ -47,11 +50,58 @@ export default function Collection() {
   const [addImageUrl, setAddImageUrl] = useState("");
   const [addImageFile, setAddImageFile] = useState<File | null>(null);
 
+  // useEffect(() => {
+  //   const store = loadCollection();
+  //   setCollecting(store.collecting);
+  //   setCollected(store.collected);
+  // }, []);
+
   useEffect(() => {
-    const store = loadCollection();
-    setCollecting(store.collecting);
-    setCollected(store.collected);
-  }, []);
+    (async () => {
+      // ✅ 지금은 로그인 없으니까 임시 userId
+      const userId = "demo";
+
+      try {
+        const rows = await fetchCollection(userId);
+
+        // rows를 CollectItem 형태로 맞춰야 하는데,
+        // DB 컬럼이 snake_case면 매핑이 필요함
+        const collecting = rows
+          .filter((r: any) => r.status === "collecting")
+          .map((r: any) => ({
+            id: r.id,
+            title: r.title,
+            image: r.image,
+            link: r.link,
+            originalPrice: r.original_price,
+            usedPrice: r.used_price,
+            status: r.status,
+            myImage: r.my_image,
+            myMemo: r.my_memo,
+          }));
+
+      const collected = rows
+        .filter((r: any) => r.status === "collected")
+        .map((r: any) => ({
+          id: r.id,
+          title: r.title,
+          image: r.image,
+          link: r.link,
+          originalPrice: r.original_price,
+          usedPrice: r.used_price,
+          status: r.status,
+          myImage: r.my_image,
+          myMemo: r.my_memo,
+        }));
+
+      setCollecting(collecting);
+      setCollected(collected);
+    } catch (e) {
+      console.error("fetchCollection failed", e);
+    }
+  })();
+}, []);
+
 
   // ESC로 닫기
   useEffect(() => {
@@ -86,7 +136,8 @@ export default function Collection() {
   }
 
   async function moveToCollected(item: CollectItem) {
-    const myImage = myFile ? await fileToDataUrl(myFile) : null;
+    // ✅ 내 사진을 Storage에 업로드해서 URL 받기
+    const myImage = myFile ? await uploadToMomongaBucket(myFile, "collected") : null;
 
     const moved: CollectItem = {
       ...item,
@@ -102,8 +153,8 @@ export default function Collection() {
     setOpen(null);
     setMyFile(null);
     setMyMemo("");
-    setEditMode(false);
   }
+
 
   function resetAddForm() {
     setAddTitle("");
@@ -136,8 +187,9 @@ export default function Collection() {
         alert("이미지 파일을 선택해줘.");
         return;
       }
-      image = await fileToDataUrl(addImageFile);
+      image = await uploadToMomongaBucket(addImageFile, "collecting");
     }
+
 
     const originalPrice = parsePrice(addOriginal);
     const usedPrice = parsePrice(addUsed);

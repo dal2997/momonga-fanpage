@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
 import TopTabs from "@/components/layout/TopTabs";
 
 import Hero from "@/components/sections/Hero";
@@ -11,9 +11,19 @@ import Collection from "@/components/sections/Collection";
 import GlassCard from "@/components/layout/GlassCard";
 import { gallery } from "@/data/gallery";
 
+import { supabase } from "@/lib/supabaseClient";
+
 type TabKey = "home" | "gallery" | "collection" | "profile";
 
 export default function Page() {
+  useEffect(() => {
+  (async () => {
+    const { data, error } = await supabase.auth.getSession();
+    console.log("SUPABASE SESSION CHECK", { data, error });
+  })();
+}, []);
+
+
   const [tab, setTab] = useState<TabKey>("home");
   const onChange = useCallback((t: TabKey) => setTab(t), []);
 
