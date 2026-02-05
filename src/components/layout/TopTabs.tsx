@@ -1,6 +1,7 @@
 "use client";
 
-import React from "react";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase/client";
 
 type TabKey = "home" | "gallery" | "collection" | "profile";
 
@@ -11,6 +12,52 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "profile", label: "프로필" },
 ];
 
+export function AuthButtons() {
+  const [email, setEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      setEmail(data.user?.email ?? null);
+    })();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setEmail(session?.user?.email ?? null);
+    });
+
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  async function logout() {
+    await supabase.auth.signOut();
+    window.location.href = "/";
+  }
+
+  if (!email) {
+    return (
+      <a
+        href="/login"
+        className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+      >
+        로그인
+      </a>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-white/60">{email}</span>
+      <button
+        type="button"
+        onClick={logout}
+        className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+      >
+        로그아웃
+      </button>
+    </div>
+  );
+}
+
 export default function TopTabs({
   value,
   onChange,
@@ -20,7 +67,6 @@ export default function TopTabs({
 }) {
   return (
     <header className="fixed inset-x-0 top-0 z-50">
-      {/* 상단 배경 */}
       <div className="pointer-events-none absolute inset-0 border-b border-white/10 bg-black/30 backdrop-blur-xl" />
 
       <div className="relative mx-auto flex h-16 max-w-6xl items-center px-5">
@@ -58,8 +104,10 @@ export default function TopTabs({
           </div>
         </nav>
 
-        {/* RIGHT: (비워둠) 나중에 로그인/설정 자리 */}
-        <div className="ml-auto w-[120px]" />
+        {/* RIGHT: 로그인/로그아웃 */}
+        <div className="ml-auto">
+          <AuthButtons />
+        </div>
       </div>
     </header>
   );
