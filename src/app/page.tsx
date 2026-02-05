@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState, useEffect } from "react";
+import { useCallback, useMemo, useState } from "react";
 import TopTabs from "@/components/layout/TopTabs";
 
 import Hero from "@/components/sections/Hero";
@@ -11,19 +11,9 @@ import Collection from "@/components/sections/Collection";
 import GlassCard from "@/components/layout/GlassCard";
 import { gallery } from "@/data/gallery";
 
-import { supabase } from "@/lib/supabaseClient";
-
 type TabKey = "home" | "gallery" | "collection" | "profile";
 
 export default function Page() {
-  useEffect(() => {
-  (async () => {
-    const { data, error } = await supabase.auth.getSession();
-    console.log("SUPABASE SESSION CHECK", { data, error });
-  })();
-}, []);
-
-
   const [tab, setTab] = useState<TabKey>("home");
   const onChange = useCallback((t: TabKey) => setTab(t), []);
 
@@ -53,7 +43,7 @@ export default function Page() {
 
               <div className="mt-6 grid gap-6 md:grid-cols-2">
                 {galleryPreview.map((item) => (
-                  <GlassCard key={item.id} className="p-0 overflow-hidden">
+                  <GlassCard key={item.id} className="overflow-hidden p-0">
                     <div className="relative h-[200px] w-full overflow-hidden rounded-2xl">
                       <img
                         src={item.image}
@@ -65,8 +55,12 @@ export default function Page() {
                         <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/80 backdrop-blur">
                           {item.tag}
                         </div>
-                        <div className="mt-3 text-lg font-semibold">{item.title}</div>
-                        <div className="mt-1 text-sm text-white/70">{item.subtitle}</div>
+                        <div className="mt-3 text-lg font-semibold">
+                          {item.title}
+                        </div>
+                        <div className="mt-1 text-sm text-white/70">
+                          {item.subtitle}
+                        </div>
                       </div>
                     </div>
                   </GlassCard>
@@ -90,9 +84,12 @@ export default function Page() {
               <div className="mt-4">
                 <GlassCard className="p-6">
                   <div className="text-sm text-white/60">TIP</div>
-                  <div className="mt-2 text-lg font-semibold">수집중 → 수집완료로 옮기면서 내 굿즈 아카이브를 쌓자</div>
+                  <div className="mt-2 text-lg font-semibold">
+                    수집중 → 수집완료로 옮기면서 내 굿즈 아카이브를 쌓자
+                  </div>
                   <div className="mt-3 text-sm text-white/60">
-                    원가/중고가를 (선택)으로 기록해두면, 나중에 판매 기능 붙일 때 바로 자산/거래 데이터로 이어짐.
+                    원가/중고가를 (선택)으로 기록해두면, 나중에 판매 기능 붙일 때
+                    바로 자산/거래 데이터로 이어짐.
                   </div>
                   <button
                     type="button"
@@ -121,7 +118,9 @@ export default function Page() {
               <div className="mt-4">
                 <GlassCard className="p-6">
                   <div className="text-sm text-white/60">나의 덕질 상태</div>
-                  <div className="mt-2 text-lg font-semibold">좋아하는 포인트 / 취향 태그를 정리해두면 기록이 더 재밌어짐</div>
+                  <div className="mt-2 text-lg font-semibold">
+                    좋아하는 포인트 / 취향 태그를 정리해두면 기록이 더 재밌어짐
+                  </div>
                   <button
                     type="button"
                     onClick={() => setTab("profile")}
