@@ -3,10 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import GlassCard from "@/components/layout/GlassCard";
 import { CollectItem } from "@/data/collection";
-import { loadCollection, saveCollection } from "@/lib/collectionStore";
-import { fetchCollection } from "@/lib/collectionService";
+import {
+  fetchCollection,
+  insertCollectItem,
+  updateCollectItem,
+} from "@/lib/collectionService";
 import { uploadToMomongaBucket } from "@/lib/storageService";
-
 
 type ViewMode = "collecting" | "collected";
 
@@ -14,6 +16,7 @@ function formatPrice(n: number | null | undefined) {
   if (n === null || n === undefined) return "—";
   return `${n.toLocaleString()}원`;
 }
+
 function parsePrice(input: string) {
   const raw = input.replaceAll(",", "").trim();
   if (!raw) return null;
@@ -22,6 +25,8 @@ function parsePrice(input: string) {
 }
 
 export default function Collection() {
+  const userId = "demo"; // ✅ 지금은 로그인 없으니 임시
+
   const [view, setView] = useState<ViewMode>("collecting");
   const [collecting, setCollecting] = useState<CollectItem[]>([]);
   const [collected, setCollected] = useState<CollectItem[]>([]);
@@ -50,58 +55,46 @@ export default function Collection() {
   const [addImageUrl, setAddImageUrl] = useState("");
   const [addImageFile, setAddImageFile] = useState<File | null>(null);
 
-  // useEffect(() => {
-  //   const store = loadCollection();
-  //   setCollecting(store.collecting);
-  //   setCollected(store.collected);
-  // }, []);
+  // DB -> UI 변환 (snake_case -> camelCase)
+  function mapRowToItem(r: any): CollectItem {
+    return {
+      id: r.id,
+      title: r.title,
+      image: r.image,
+      link: r.link,
+      originalPrice: r.original_price,
+      usedPrice: r.used_price,
+      status: r.status,
+      myImage: r.my_image,
+      myMemo: r.my_memo,
+    };
+  }
+
+  async function refreshFromDb() {
+    const rows = await fetchCollection(userId);
+
+    const nextCollecting = rows
+      .filter((r: any) => r.status === "collecting")
+      .map(mapRowToItem);
+
+    const nextCollected = rows
+      .filter((r: any) => r.status === "collected")
+      .map(mapRowToItem);
+
+    setCollecting(nextCollecting);
+    setCollected(nextCollected);
+  }
 
   useEffect(() => {
     (async () => {
-      // ✅ 지금은 로그인 없으니까 임시 userId
-      const userId = "demo";
-
       try {
-        const rows = await fetchCollection(userId);
-
-        // rows를 CollectItem 형태로 맞춰야 하는데,
-        // DB 컬럼이 snake_case면 매핑이 필요함
-        const collecting = rows
-          .filter((r: any) => r.status === "collecting")
-          .map((r: any) => ({
-            id: r.id,
-            title: r.title,
-            image: r.image,
-            link: r.link,
-            originalPrice: r.original_price,
-            usedPrice: r.used_price,
-            status: r.status,
-            myImage: r.my_image,
-            myMemo: r.my_memo,
-          }));
-
-      const collected = rows
-        .filter((r: any) => r.status === "collected")
-        .map((r: any) => ({
-          id: r.id,
-          title: r.title,
-          image: r.image,
-          link: r.link,
-          originalPrice: r.original_price,
-          usedPrice: r.used_price,
-          status: r.status,
-          myImage: r.my_image,
-          myMemo: r.my_memo,
-        }));
-
-      setCollecting(collecting);
-      setCollected(collected);
-    } catch (e) {
-      console.error("fetchCollection failed", e);
-    }
-  })();
-}, []);
-
+        await refreshFromDb();
+      } catch (e) {
+        console.error("fetchCollection failed", e);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ESC로 닫기
   useEffect(() => {
@@ -120,42 +113,6 @@ export default function Collection() {
     [view, collecting, collected]
   );
 
-  function persist(nextCollecting: CollectItem[], nextCollected: CollectItem[]) {
-    setCollecting(nextCollecting);
-    setCollected(nextCollected);
-    saveCollection({ collecting: nextCollecting, collected: nextCollected });
-  }
-
-  async function fileToDataUrl(file: File) {
-    return new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-
-  async function moveToCollected(item: CollectItem) {
-    // ✅ 내 사진을 Storage에 업로드해서 URL 받기
-    const myImage = myFile ? await uploadToMomongaBucket(myFile, "collected") : null;
-
-    const moved: CollectItem = {
-      ...item,
-      status: "collected",
-      myImage,
-      myMemo: myMemo.trim() ? myMemo.trim() : null,
-    };
-
-    const nextCollecting = collecting.filter((x) => x.id !== item.id);
-    const nextCollected = [moved, ...collected];
-
-    persist(nextCollecting, nextCollected);
-    setOpen(null);
-    setMyFile(null);
-    setMyMemo("");
-  }
-
-
   function resetAddForm() {
     setAddTitle("");
     setAddLink("");
@@ -166,82 +123,128 @@ export default function Collection() {
     setAddImageFile(null);
   }
 
-  async function submitAddCollecting() {
-    const title = addTitle.trim();
-    if (!title) {
-      alert("이름(제목)은 필수야.");
-      return;
-    }
-
-    let image: string | null = null;
-
-    if (addImageMode === "url") {
-      const url = addImageUrl.trim();
-      if (!url) {
-        alert("이미지 URL을 넣거나, 업로드로 바꿔서 파일을 올려줘.");
-        return;
-      }
-      image = url;
-    } else {
-      if (!addImageFile) {
-        alert("이미지 파일을 선택해줘.");
-        return;
-      }
-      image = await uploadToMomongaBucket(addImageFile, "collecting");
-    }
-
-
-    const originalPrice = parsePrice(addOriginal);
-    const usedPrice = parsePrice(addUsed);
-
-    const next: CollectItem = {
-      id: crypto.randomUUID(),
-      title,
-      image,
-      link: addLink.trim() ? addLink.trim() : null,
-      originalPrice,
-      usedPrice,
-      status: "collecting",
-    };
-
-    const nextCollecting = [next, ...collecting];
-    persist(nextCollecting, collected);
-
-    setAddOpen(false);
-    resetAddForm();
-  }
-
   function openDetail(item: CollectItem) {
     setOpen(item);
     setEditMode(false);
 
     setEditTitle(item.title ?? "");
     setEditLink(item.link ?? "");
-    setEditOriginal(item.originalPrice === null || item.originalPrice === undefined ? "" : String(item.originalPrice));
-    setEditUsed(item.usedPrice === null || item.usedPrice === undefined ? "" : String(item.usedPrice));
+    setEditOriginal(
+      item.originalPrice === null || item.originalPrice === undefined
+        ? ""
+        : String(item.originalPrice)
+    );
+    setEditUsed(
+      item.usedPrice === null || item.usedPrice === undefined
+        ? ""
+        : String(item.usedPrice)
+    );
+
+    setMyFile(null);
+    setMyMemo(item.myMemo ?? "");
   }
 
-  function saveEdit() {
+  async function submitAddCollecting() {
+    try {
+      const title = addTitle.trim();
+      if (!title) {
+        alert("이름(제목)은 필수야.");
+        return;
+      }
+
+      // 1) 이미지 준비 (URL or 업로드)
+      let image: string | null = null;
+
+      if (addImageMode === "url") {
+        const url = addImageUrl.trim();
+        if (!url) {
+          alert("이미지 URL을 넣거나, 업로드로 바꿔서 파일을 올려줘.");
+          return;
+        }
+        image = url;
+      } else {
+        if (!addImageFile) {
+          alert("이미지 파일을 선택해줘.");
+          return;
+        }
+        image = await uploadToMomongaBucket(addImageFile, "collecting");
+      }
+
+      const originalPrice = parsePrice(addOriginal);
+      const usedPrice = parsePrice(addUsed);
+
+      // 2) DB INSERT (id는 DB가 만듦)
+      const next: CollectItem = {
+        id: crypto.randomUUID(), // ← DB가 id 자동 생성이면 이 값은 실질적으로 안 써도 됨(서비스가 id를 insert 안 하면 무관)
+        title,
+        image,
+        link: addLink.trim() ? addLink.trim() : null,
+        originalPrice,
+        usedPrice,
+        status: "collecting",
+      };
+
+      await insertCollectItem(userId, next);
+
+      // 3) 화면 갱신
+      await refreshFromDb();
+
+      setAddOpen(false);
+      resetAddForm();
+    } catch (e) {
+      console.error(e);
+      alert("저장 실패. 콘솔(F12)을 확인해줘.");
+    }
+  }
+
+  async function moveToCollected(item: CollectItem) {
+    try {
+      const myImage = myFile
+        ? await uploadToMomongaBucket(myFile, "collected")
+        : null;
+
+      await updateCollectItem(userId, item.id, {
+        status: "collected",
+        myImage,
+        myMemo: myMemo.trim() ? myMemo.trim() : null,
+      });
+
+      await refreshFromDb();
+
+      setOpen(null);
+      setMyFile(null);
+      setMyMemo("");
+    } catch (e) {
+      console.error(e);
+      alert("수집완료 이동 실패. 콘솔(F12)을 확인해줘.");
+    }
+  }
+
+  async function saveEdit() {
     if (!open) return;
 
-    const nextItem: CollectItem = {
-      ...open,
-      title: editTitle.trim() ? editTitle.trim() : open.title,
-      link: editLink.trim() ? editLink.trim() : null,
-      originalPrice: parsePrice(editOriginal),
-      usedPrice: parsePrice(editUsed),
-    };
+    try {
+      await updateCollectItem(userId, open.id, {
+        title: editTitle.trim() ? editTitle.trim() : open.title,
+        link: editLink.trim() ? editLink.trim() : null,
+        originalPrice: parsePrice(editOriginal),
+        usedPrice: parsePrice(editUsed),
+      });
 
-    if (open.status === "collecting") {
-      const nextCollecting = collecting.map((x) => (x.id === open.id ? nextItem : x));
-      persist(nextCollecting, collected);
-    } else {
-      const nextCollected = collected.map((x) => (x.id === open.id ? nextItem : x));
-      persist(collecting, nextCollected);
+      await refreshFromDb();
+
+      // 열린 모달에 최신값 반영
+      const updated =
+        (view === "collecting" ? collecting : collected).find(
+          (x) => x.id === open.id
+        ) ?? open;
+
+      setOpen(updated);
+      setEditMode(false);
+    } catch (e) {
+      console.error(e);
+      alert("수정 저장 실패. 콘솔(F12)을 확인해줘.");
     }
-
-    setOpen(nextItem);
-    setEditMode(false);
   }
 
   return (
@@ -289,7 +292,7 @@ export default function Collection() {
         </div>
       </div>
 
-      {/* ✅ 3열 그리드 */}
+      {/* 3열 그리드 */}
       <div className="mt-6 grid gap-6 md:grid-cols-3">
         {list.map((item) => (
           <button
@@ -300,7 +303,6 @@ export default function Collection() {
           >
             <GlassCard className="group overflow-hidden p-0">
               <div className="relative h-[220px] w-full overflow-hidden rounded-2xl">
-                {/* ✅ collected라도 카드 대표는 "시중 이미지" 유지 (내 사진은 모달에서 나란히) */}
                 <img
                   src={item.image}
                   alt={item.title}
@@ -313,16 +315,16 @@ export default function Collection() {
                     {item.status === "collecting" ? "수집중" : "수집완료"}
                     <span className="text-white/40">•</span>
                     <span className="text-white/70">
-                      원가 {formatPrice(item.originalPrice)} / 중고 {formatPrice(item.usedPrice)}
+                      원가 {formatPrice(item.originalPrice)} / 중고{" "}
+                      {formatPrice(item.usedPrice)}
                     </span>
                   </div>
 
                   <div className="mt-3 text-lg font-semibold">{item.title}</div>
 
-                  {/* ✅ 링크가 있으면 카드에서도 한 줄 보여주기 */}
                   {item.link ? (
                     <div className="mt-1 text-xs text-white/65 underline underline-offset-4">
-                      링크 있음 (클릭해서 열기/수정)
+                      링크 있음 (모달에서 열기/수정)
                     </div>
                   ) : (
                     <div className="mt-1 text-xs text-white/40">링크 없음</div>
@@ -350,7 +352,6 @@ export default function Collection() {
 
           <div className="relative w-full max-w-5xl">
             <GlassCard className="overflow-hidden p-0">
-              {/* ✅ 수집완료면: 시중 이미지 + 내 사진을 나란히(있으면) */}
               <div className="grid md:grid-cols-2">
                 <div className="relative h-[360px] w-full overflow-hidden">
                   <img
@@ -364,12 +365,12 @@ export default function Collection() {
                       {open.status === "collecting" ? "수집중" : "수집완료"}
                       <span className="text-white/40">•</span>
                       <span className="text-white/70">
-                        원가 {formatPrice(open.originalPrice)} / 중고 {formatPrice(open.usedPrice)}
+                        원가 {formatPrice(open.originalPrice)} / 중고{" "}
+                        {formatPrice(open.usedPrice)}
                       </span>
                     </div>
                     <div className="mt-3 text-3xl font-semibold">{open.title}</div>
 
-                    {/* ✅ 링크는 “텍스트로” 확실히 보여주기 */}
                     {open.link ? (
                       <a
                         className="mt-2 inline-block text-sm text-white/70 underline underline-offset-4 hover:text-white"
@@ -385,7 +386,6 @@ export default function Collection() {
                   </div>
                 </div>
 
-                {/* 오른쪽: 내 사진(수집완료일 때만 보여주고, 없으면 안내) */}
                 <div className="relative h-[360px] w-full overflow-hidden bg-white/[0.02]">
                   {open.status === "collected" ? (
                     open.myImage ? (
@@ -408,7 +408,6 @@ export default function Collection() {
               </div>
 
               <div className="px-6 py-5">
-                {/* 상단 액션: 수정 버튼 */}
                 <div className="flex items-center justify-between">
                   <div className="text-lg font-semibold">
                     {open.status === "collecting" ? "수집중 상세" : "내 수집품"}
@@ -436,7 +435,6 @@ export default function Collection() {
                   </div>
                 </div>
 
-                {/* ✅ 수정 모드: 제목/링크/가격 수정 */}
                 {editMode && (
                   <div className="mt-4 grid gap-4">
                     <div className="grid gap-4 md:grid-cols-2">
@@ -470,6 +468,7 @@ export default function Collection() {
                           className="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 outline-none placeholder:text-white/30 focus:border-white/20"
                         />
                       </div>
+
                       <div>
                         <div className="text-sm text-white/70">중고가</div>
                         <input
@@ -493,7 +492,6 @@ export default function Collection() {
                   </div>
                 )}
 
-                {/* 수집중일 때: 수집완료로 이동 UI */}
                 {open.status === "collecting" && (
                   <>
                     <div className="mt-6 text-sm text-white/55">
@@ -502,16 +500,22 @@ export default function Collection() {
 
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
                       <div>
-                        <div className="text-sm text-white/70">내 사진 업로드 (선택)</div>
+                        <div className="text-sm text-white/70">
+                          내 사진 업로드 (선택)
+                        </div>
                         <label className="mt-2 inline-flex cursor-pointer items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10">
                           파일 선택
                           <input
                             type="file"
                             accept="image/*"
                             className="hidden"
-                            onChange={(e) => setMyFile(e.target.files?.[0] ?? null)}
+                            onChange={(e) =>
+                              setMyFile(e.target.files?.[0] ?? null)
+                            }
                           />
-                          <span className="text-white/40">{myFile ? myFile.name : "선택된 파일 없음"}</span>
+                          <span className="text-white/40">
+                            {myFile ? myFile.name : "선택된 파일 없음"}
+                          </span>
                         </label>
                       </div>
 
@@ -539,7 +543,6 @@ export default function Collection() {
                   </>
                 )}
 
-                {/* 수집완료일 때: 메모 표시 */}
                 {open.status === "collected" && (
                   <div className="mt-4 text-sm text-white/70">
                     {open.myMemo ? open.myMemo : "메모 없음"}
@@ -551,7 +554,7 @@ export default function Collection() {
         </div>
       )}
 
-      {/* 수집중 추가 모달 (네 기존 그대로 유지) */}
+      {/* 수집중 추가 모달 */}
       {addOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center px-4">
           <button
@@ -673,7 +676,9 @@ export default function Collection() {
                           type="file"
                           accept="image/*"
                           className="hidden"
-                          onChange={(e) => setAddImageFile(e.target.files?.[0] ?? null)}
+                          onChange={(e) =>
+                            setAddImageFile(e.target.files?.[0] ?? null)
+                          }
                         />
                         <span className="text-white/40">
                           {addImageFile ? addImageFile.name : "선택된 파일 없음"}
