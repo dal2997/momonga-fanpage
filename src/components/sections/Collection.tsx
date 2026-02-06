@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import GlassCard from "@/components/layout/GlassCard";
 import { CollectItem } from "@/data/collection";
 import {
@@ -28,12 +28,21 @@ function parsePrice(input: string) {
 
 function isProbablyImageUrl(url: string) {
   const u = url.trim().toLowerCase();
-  return (
-    u.startsWith("http://") ||
-    u.startsWith("https://") ||
-    u.startsWith("data:image/")
-  );
+  return u.startsWith("http://") || u.startsWith("https://") || u.startsWith("data:image/");
 }
+
+function baseName(fileName: string) {
+  const idx = fileName.lastIndexOf(".");
+  const raw = idx >= 0 ? fileName.slice(0, idx) : fileName;
+  return raw.replaceAll("_", " ").trim();
+}
+
+type QuickEntry = {
+  id: string;
+  file: File;
+  previewUrl: string;
+  title: string;
+};
 
 export default function Collection() {
   const [view, setView] = useState<ViewMode>("collecting");
@@ -52,7 +61,7 @@ export default function Collection() {
   const [myFile, setMyFile] = useState<File | null>(null);
   const [myMemo, setMyMemo] = useState("");
 
-  // 수정 모드(링크/가격/제목 + 대표이미지 URL/업로드)
+  // 수정 모드
   const [editMode, setEditMode] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editLink, setEditLink] = useState("");
@@ -70,10 +79,22 @@ export default function Collection() {
   const [addOriginal, setAddOriginal] = useState("");
   const [addUsed, setAddUsed] = useState("");
 
-  // 이미지 입력: URL or Upload
   const [addImageMode, setAddImageMode] = useState<"url" | "upload">("url");
   const [addImageUrl, setAddImageUrl] = useState("");
   const [addImageFile, setAddImageFile] = useState<File | null>(null);
+
+  // ✅ 수집완료 빠른추가 모달
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [quickEntries, setQuickEntries] = useState<QuickEntry[]>([]);
+  const [quickMemo, setQuickMemo] = useState("");
+  const [quickPrefix, setQuickPrefix] = useState("");
+  const [quickSuffix, setQuickSuffix] = useState("");
+  const [quickNumbering, setQuickNumbering] = useState(true);
+  const [quickUploading, setQuickUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // 드래그 정렬
+  const dragIdRef = useRef<string | null>(null);
 
   // 버튼 연타 방지
   const [savingAdd, setSavingAdd] = useState(false);
@@ -99,18 +120,14 @@ export default function Collection() {
   async function refreshFromDb(uid: string) {
     const rows = await fetchCollection(uid);
 
-    const nextCollecting = rows
-      .filter((r: any) => r.status === "collecting")
-      .map(mapRowToItem);
-    const nextCollected = rows
-      .filter((r: any) => r.status === "collected")
-      .map(mapRowToItem);
+    const nextCollecting = rows.filter((r: any) => r.status === "collecting").map(mapRowToItem);
+    const nextCollected = rows.filter((r: any) => r.status === "collected").map(mapRowToItem);
 
     setCollecting(nextCollecting);
     setCollected(nextCollected);
   }
 
-  // ✅ 최초 진입: "세션 먼저 확인" → 있으면 uid 저장 후 fetch
+  // ✅ 최초 진입: 세션 확인 → 있으면 uid 저장 후 fetch
   useEffect(() => {
     let alive = true;
 
@@ -143,34 +160,33 @@ export default function Collection() {
       }
     })();
 
-    // 로그인 상태 변화도 반영
-    const { data: sub } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        const uid = session?.user?.id ?? null;
-        if (!alive) return;
+    // 로그인 상태 변화 반영
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const uid = session?.user?.id ?? null;
+      if (!alive) return;
 
-        if (!uid) {
-          setUserId(null);
-          setNeedLogin(true);
-          setCollecting([]);
-          setCollected([]);
-          setOpen(null);
-          setAddOpen(false);
-          setEditMode(false);
-          setLoading(false);
-          return;
-        }
-
-        setUserId(uid);
-        setNeedLogin(false);
-        setLoading(true);
-        try {
-          await refreshFromDb(uid);
-        } finally {
-          if (alive) setLoading(false);
-        }
+      if (!uid) {
+        setUserId(null);
+        setNeedLogin(true);
+        setCollecting([]);
+        setCollected([]);
+        setOpen(null);
+        setAddOpen(false);
+        setEditMode(false);
+        setQuickOpen(false);
+        setLoading(false);
+        return;
       }
-    );
+
+      setUserId(uid);
+      setNeedLogin(false);
+      setLoading(true);
+      try {
+        await refreshFromDb(uid);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    });
 
     return () => {
       alive = false;
@@ -185,6 +201,7 @@ export default function Collection() {
       setOpen(null);
       setAddOpen(false);
       setEditMode(false);
+      setQuickOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -205,6 +222,15 @@ export default function Collection() {
     setAddImageFile(null);
   }
 
+  function resetQuick() {
+    quickEntries.forEach((e) => URL.revokeObjectURL(e.previewUrl));
+    setQuickEntries([]);
+    setQuickMemo("");
+    setQuickPrefix("");
+    setQuickSuffix("");
+    setQuickNumbering(true);
+  }
+
   function openDetail(item: CollectItem) {
     setOpen(item);
     setEditMode(false);
@@ -222,7 +248,6 @@ export default function Collection() {
         : String(item.usedPrice)
     );
 
-    // ✅ 대표이미지 수정 초기값
     setEditImageMode("url");
     setEditImageUrl(item.image ?? "");
     setEditImageFile(null);
@@ -315,6 +340,7 @@ export default function Collection() {
       setOpen(null);
       setMyFile(null);
       setMyMemo("");
+      setView("collected");
     } catch (e) {
       console.error(e);
       alert("수집완료 이동 실패. 콘솔(F12)을 확인해줘.");
@@ -333,7 +359,7 @@ export default function Collection() {
 
     setSavingEdit(true);
     try {
-      let image = open.image;
+      let image = open.image ?? null;
 
       if (editImageMode === "url") {
         if (editImageUrl.trim()) image = editImageUrl.trim();
@@ -342,7 +368,6 @@ export default function Collection() {
           alert("업로드할 파일을 선택해줘.");
           return;
         }
-        // ✅ 정책 허용 경로(collecting/<uid>/... or collected/<uid>/...)
         image = await uploadToMomongaBucket(editImageFile, `${open.status}/${userId}`);
       }
 
@@ -356,8 +381,7 @@ export default function Collection() {
 
       await refreshFromDb(userId);
 
-      // 모달 상단 이미지도 바로 갱신되게
-      setOpen((prev) => (prev ? { ...prev, image } : prev));
+      setOpen((prev) => (prev ? { ...prev, image: image ?? prev.image } : prev));
 
       setEditMode(false);
       setEditImageFile(null);
@@ -394,6 +418,108 @@ export default function Collection() {
       alert("삭제 실패. 콘솔(F12)을 확인해줘.");
     } finally {
       setDeleting(false);
+    }
+  }
+
+  // =========================
+  // ✅ 수집완료 빠른추가 로직
+  // =========================
+  function addQuickFiles(files: File[]) {
+    const next: QuickEntry[] = files.map((f) => ({
+      id: crypto.randomUUID(),
+      file: f,
+      previewUrl: URL.createObjectURL(f),
+      title: baseName(f.name),
+    }));
+    setQuickEntries((prev) => [...prev, ...next]);
+  }
+
+  function onQuickFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    addQuickFiles(files);
+    e.target.value = "";
+  }
+
+  function moveEntry(fromIdx: number, toIdx: number) {
+    setQuickEntries((prev) => {
+      if (toIdx < 0 || toIdx >= prev.length) return prev;
+      const copy = [...prev];
+      const [picked] = copy.splice(fromIdx, 1);
+      copy.splice(toIdx, 0, picked);
+      return copy;
+    });
+  }
+
+  function applyBulkTitles() {
+    setQuickEntries((prev) =>
+      prev.map((e, i) => {
+        const num = quickNumbering ? `${i + 1}. ` : "";
+        const core = e.title.trim() || "제목";
+        return { ...e, title: `${quickPrefix}${num}${core}${quickSuffix}`.trim() };
+      })
+    );
+  }
+
+  function resetTitlesToFilename() {
+    setQuickEntries((prev) => prev.map((e) => ({ ...e, title: baseName(e.file.name) })));
+  }
+
+  function removeQuickEntry(id: string) {
+    setQuickEntries((prev) => {
+      const target = prev.find((x) => x.id === id);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((x) => x.id !== id);
+    });
+  }
+
+  async function submitQuickCollected() {
+    if (quickUploading) return;
+
+    try {
+      if (!userId) {
+        alert("로그인이 필요해.");
+        return;
+      }
+      if (quickEntries.length === 0) {
+        alert("사진을 1장 이상 넣어줘.");
+        return;
+      }
+
+      setQuickUploading(true);
+
+      for (const entry of quickEntries) {
+        const myUrl = await uploadToMomongaBucket(entry.file, `collected/${userId}`);
+
+        // ✅ “수집완료 빠른추가”는 상품이미지/가격/링크 없이도 등록되게
+        // (현재 DB가 image NOT NULL이면 여기서 image=myUrl로 넣어둬야 등록됨)
+        await insertCollectItem(userId, {
+          id: crypto.randomUUID(),
+          title: entry.title.trim() || baseName(entry.file.name),
+          image: myUrl,
+          link: null,
+          originalPrice: null,
+          usedPrice: null,
+          status: "collected",
+          myImage: myUrl,
+          myMemo: quickMemo.trim() ? quickMemo.trim() : null,
+        });
+      }
+
+      await refreshFromDb(userId);
+
+      setQuickOpen(false);
+      resetQuick();
+      setView("collected");
+    } catch (e: any) {
+      console.error(e);
+      const msg =
+        e?.message ||
+        e?.error_description ||
+        (typeof e === "string" ? e : JSON.stringify(e));
+      alert(`빠른추가 실패: ${msg}`);
+    } finally {
+      setQuickUploading(false);
     }
   }
 
@@ -445,18 +571,27 @@ export default function Collection() {
           >
             + 수집중 추가
           </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (!userId) {
+                alert("로그인이 필요해.");
+                return;
+              }
+              setQuickOpen(true);
+            }}
+            className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-white hover:bg-white/15"
+          >
+            ⚡ 수집완료 빠른추가
+          </button>
         </div>
       </div>
 
-      {/* 로그인 필요 안내 */}
       {needLogin && (
         <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5 text-white/80">
-          <div className="text-sm">
-            로그인하면 내 수집 데이터를 불러오고 저장할 수 있어.
-          </div>
-          <div className="mt-2 text-xs text-white/60">
-            로그인 후 다시 이 탭을 열면 자동으로 불러와져.
-          </div>
+          <div className="text-sm">로그인하면 내 수집 데이터를 불러오고 저장할 수 있어.</div>
+          <div className="mt-2 text-xs text-white/60">로그인 후 다시 이 탭을 열면 자동으로 불러와져.</div>
 
           <div className="mt-4 flex gap-2">
             <a
@@ -476,47 +611,70 @@ export default function Collection() {
         </div>
       )}
 
-      {/* 로딩 */}
       {loading && <div className="mt-6 text-sm text-white/60">불러오는 중…</div>}
 
-      {/* 3열 그리드 */}
       {!loading && !needLogin && (
         <div className="mt-6 grid gap-6 md:grid-cols-3">
           {list.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => openDetail(item)}
-              className="text-left"
-            >
+            <button key={item.id} type="button" onClick={() => openDetail(item)} className="text-left">
               <GlassCard className="group overflow-hidden p-0">
                 <div className="relative h-[220px] w-full overflow-hidden rounded-2xl">
-                  <img
-                    src={item.image}
-                    alt={item.title}
-                    className="block h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.04]"
-                  />
-                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-black/0" />
+                  {/* 카드 썸네일: 수집완료면 2분할(상품/내사진) */}
+                  {item.status === "collected" ? (
+                    <div className="grid h-full w-full grid-cols-2">
+                      {item.image ? (
+                        <img
+                          src={item.image}
+                          alt={`${item.title} 상품 이미지`}
+                          className="block h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.04]"
+                        />
+                      ) : (
+                        <div className="grid h-full place-items-center bg-white/[0.03] text-xs text-white/50">
+                          상품 이미지 없음
+                        </div>
+                      )}
 
-                  <div className="absolute bottom-0 left-0 right-0 p-5">
+                      {item.myImage ? (
+                        <img
+                          src={item.myImage}
+                          alt={`${item.title} 내 사진`}
+                          className="block h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.04]"
+                        />
+                      ) : (
+                        <div className="grid h-full place-items-center bg-white/[0.03] text-xs text-white/50">
+                          내 사진 없음
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <img
+                      src={item.image ?? ""}
+                      alt={item.title}
+                      className="block h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.04]"
+                    />
+                  )}
+
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/65 via-black/15 to-black/0" />
+
+                  {item.status === "collected" && (
+                    <div className="pointer-events-none absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/30 px-3 py-1 text-[11px] text-white/80 backdrop-blur">
+                      <span>상품</span>
+                      <span className="text-white/40">|</span>
+                      <span>내사진</span>
+                    </div>
+                  )}
+
+                  <div className="absolute bottom-0 left-0 right-0 p-4">
                     <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/80 backdrop-blur">
                       {item.status === "collecting" ? "수집중" : "수집완료"}
                       <span className="text-white/40">•</span>
                       <span className="text-white/70">
-                        원가 {formatPrice(item.originalPrice)} / 중고{" "}
-                        {formatPrice(item.usedPrice)}
+                        원가 {formatPrice(item.originalPrice)} / 중고 {formatPrice(item.usedPrice)}
                       </span>
+                      {item.link ? <span className="text-white/70">• 🔗</span> : null}
                     </div>
 
-                    <div className="mt-3 text-lg font-semibold">{item.title}</div>
-
-                    {item.link ? (
-                      <div className="mt-1 text-xs text-white/65 underline underline-offset-4">
-                        링크 있음 (모달에서 열기/수정)
-                      </div>
-                    ) : (
-                      <div className="mt-1 text-xs text-white/40">링크 없음</div>
-                    )}
+                    <div className="mt-2 line-clamp-1 text-lg font-semibold">{item.title}</div>
                   </div>
                 </div>
 
@@ -543,19 +701,20 @@ export default function Collection() {
             <GlassCard className="overflow-hidden p-0">
               <div className="grid md:grid-cols-2">
                 <div className="relative h-[360px] w-full overflow-hidden">
-                  <img
-                    src={open.image}
-                    alt={open.title}
-                    className="block h-full w-full object-cover"
-                  />
+                  {open.image ? (
+                    <img src={open.image} alt={open.title} className="block h-full w-full object-cover" />
+                  ) : (
+                    <div className="grid h-full place-items-center bg-white/[0.03] text-sm text-white/60">
+                      상품 이미지 없음
+                    </div>
+                  )}
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/0" />
                   <div className="absolute bottom-0 left-0 right-0 p-6">
                     <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/80 backdrop-blur">
                       {open.status === "collecting" ? "수집중" : "수집완료"}
                       <span className="text-white/40">•</span>
                       <span className="text-white/70">
-                        원가 {formatPrice(open.originalPrice)} / 중고{" "}
-                        {formatPrice(open.usedPrice)}
+                        원가 {formatPrice(open.originalPrice)} / 중고 {formatPrice(open.usedPrice)}
                       </span>
                     </div>
                     <div className="mt-3 text-3xl font-semibold">{open.title}</div>
@@ -578,15 +737,9 @@ export default function Collection() {
                 <div className="relative h-[360px] w-full overflow-hidden bg-white/[0.02]">
                   {open.status === "collected" ? (
                     open.myImage ? (
-                      <img
-                        src={open.myImage}
-                        alt="내 수집품 사진"
-                        className="block h-full w-full object-cover"
-                      />
+                      <img src={open.myImage} alt="내 수집품 사진" className="block h-full w-full object-cover" />
                     ) : (
-                      <div className="grid h-full place-items-center p-8 text-white/60">
-                        내 사진이 아직 없어. (나중에 추가 가능)
-                      </div>
+                      <div className="grid h-full place-items-center p-8 text-white/60">내 사진이 아직 없어.</div>
                     )
                   ) : (
                     <div className="grid h-full place-items-center p-8 text-white/60">
@@ -598,9 +751,7 @@ export default function Collection() {
 
               <div className="px-6 py-5">
                 <div className="flex items-center justify-between">
-                  <div className="text-lg font-semibold">
-                    {open.status === "collecting" ? "수집중 상세" : "내 수집품"}
-                  </div>
+                  <div className="text-lg font-semibold">{open.status === "collecting" ? "수집중 상세" : "내 수집품"}</div>
 
                   <div className="flex gap-2">
                     <button
@@ -678,9 +829,8 @@ export default function Collection() {
                       </div>
                     </div>
 
-                    {/* 대표 이미지 수정: URL / 업로드 */}
                     <div className="mt-2">
-                      <div className="text-sm text-white/70">대표 이미지</div>
+                      <div className="text-sm text-white/70">대표(상품) 이미지</div>
 
                       <div className="mt-2 inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1">
                         <button
@@ -719,16 +869,12 @@ export default function Collection() {
                           <input
                             value={editImageUrl}
                             onChange={(e) => setEditImageUrl(e.target.value)}
-                            placeholder="https://... (jpg/png 같은 실제 이미지 URL 권장)"
+                            placeholder="https://... (실제 이미지 URL 권장)"
                             className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 outline-none"
                           />
-                          {editImageUrl.trim() &&
-                            !isProbablyImageUrl(editImageUrl.trim()) && (
-                              <div className="mt-2 text-xs text-white/50">
-                                ⚠️ 이 URL이 이미지가 아닐 수도 있어. 가능하면 .jpg/.png 같은
-                                “진짜 이미지 URL”을 추천.
-                              </div>
-                            )}
+                          {editImageUrl.trim() && !isProbablyImageUrl(editImageUrl.trim()) && (
+                            <div className="mt-2 text-xs text-white/50">⚠️ 이미지 URL이 아닐 수도 있어.</div>
+                          )}
                         </div>
                       ) : (
                         <div className="mt-3">
@@ -738,13 +884,9 @@ export default function Collection() {
                               type="file"
                               accept="image/*"
                               className="hidden"
-                              onChange={(e) =>
-                                setEditImageFile(e.target.files?.[0] ?? null)
-                              }
+                              onChange={(e) => setEditImageFile(e.target.files?.[0] ?? null)}
                             />
-                            <span className="text-white/40">
-                              {editImageFile ? editImageFile.name : "선택된 파일 없음"}
-                            </span>
+                            <span className="text-white/40">{editImageFile ? editImageFile.name : "선택된 파일 없음"}</span>
                           </label>
                         </div>
                       )}
@@ -774,15 +916,8 @@ export default function Collection() {
                         <div className="text-sm text-white/70">내 사진 업로드 (선택)</div>
                         <label className="mt-2 inline-flex cursor-pointer items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10">
                           파일 선택
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={(e) => setMyFile(e.target.files?.[0] ?? null)}
-                          />
-                          <span className="text-white/40">
-                            {myFile ? myFile.name : "선택된 파일 없음"}
-                          </span>
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => setMyFile(e.target.files?.[0] ?? null)} />
+                          <span className="text-white/40">{myFile ? myFile.name : "선택된 파일 없음"}</span>
                         </label>
                       </div>
 
@@ -792,7 +927,7 @@ export default function Collection() {
                           value={myMemo}
                           onChange={(e) => setMyMemo(e.target.value)}
                           placeholder="예: 배송기다리는중 / 실물 미쳤다"
-                          className="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 outline-none placeholder:text-white/30 focus:border-white/20"
+                          className="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 outline-none placeholder:text-white/30"
                         />
                       </div>
                     </div>
@@ -812,9 +947,7 @@ export default function Collection() {
                 )}
 
                 {open.status === "collected" && (
-                  <div className="mt-4 text-sm text-white/70">
-                    {open.myMemo ? open.myMemo : "메모 없음"}
-                  </div>
+                  <div className="mt-4 text-sm text-white/70">{open.myMemo ? open.myMemo : "메모 없음"}</div>
                 )}
               </div>
             </GlassCard>
@@ -863,7 +996,7 @@ export default function Collection() {
                     value={addTitle}
                     onChange={(e) => setAddTitle(e.target.value)}
                     placeholder="예: 모몽가 키링 / 스티커팩 / 피규어"
-                    className="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 outline-none placeholder:text-white/30 focus:border-white/20"
+                    className="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 outline-none placeholder:text-white/30"
                   />
                 </div>
 
@@ -873,7 +1006,7 @@ export default function Collection() {
                     value={addLink}
                     onChange={(e) => setAddLink(e.target.value)}
                     placeholder="https://... (구매/정보 링크)"
-                    className="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 outline-none placeholder:text-white/30 focus:border-white/20"
+                    className="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 outline-none placeholder:text-white/30"
                   />
                 </div>
 
@@ -884,7 +1017,7 @@ export default function Collection() {
                       value={addOriginal}
                       onChange={(e) => setAddOriginal(e.target.value)}
                       placeholder="예: 12000"
-                      className="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 outline-none placeholder:text-white/30 focus:border-white/20"
+                      className="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 outline-none placeholder:text-white/30"
                     />
                   </div>
 
@@ -894,7 +1027,7 @@ export default function Collection() {
                       value={addUsed}
                       onChange={(e) => setAddUsed(e.target.value)}
                       placeholder="예: 8000"
-                      className="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 outline-none placeholder:text-white/30 focus:border-white/20"
+                      className="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 outline-none placeholder:text-white/30"
                     />
                   </div>
                 </div>
@@ -932,13 +1065,9 @@ export default function Collection() {
                       <input
                         value={addImageUrl}
                         onChange={(e) => setAddImageUrl(e.target.value)}
-                        placeholder="https://... (jpg/png 같은 실제 이미지 URL 권장)"
-                        className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 outline-none placeholder:text-white/30 focus:border-white/20"
+                        placeholder="https://... (실제 이미지 URL 권장)"
+                        className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 outline-none placeholder:text-white/30"
                       />
-                      <div className="mt-2 text-xs text-white/50">
-                        팁: 스마트스토어 “상품 링크”는 이미지가 아니라서 썸네일이 안 뜰 수 있어.
-                        가능하면 실제 이미지 URL을 넣어줘.
-                      </div>
                     </div>
                   ) : (
                     <div className="mt-3">
@@ -948,13 +1077,9 @@ export default function Collection() {
                           type="file"
                           accept="image/*"
                           className="hidden"
-                          onChange={(e) =>
-                            setAddImageFile(e.target.files?.[0] ?? null)
-                          }
+                          onChange={(e) => setAddImageFile(e.target.files?.[0] ?? null)}
                         />
-                        <span className="text-white/40">
-                          {addImageFile ? addImageFile.name : "선택된 파일 없음"}
-                        </span>
+                        <span className="text-white/40">{addImageFile ? addImageFile.name : "선택된 파일 없음"}</span>
                       </label>
                     </div>
                   )}
@@ -971,6 +1096,221 @@ export default function Collection() {
                     {savingAdd ? "저장 중…" : "저장하고 수집중에 추가"}
                   </button>
                 </div>
+              </div>
+            </GlassCard>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ 수집완료 빠른추가 모달 */}
+      {quickOpen && !needLogin && (
+        <div className="fixed inset-0 z-50 grid place-items-center px-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/60"
+            onClick={() => {
+              setQuickOpen(false);
+              resetQuick();
+            }}
+          />
+
+          <div className="relative w-full max-w-6xl">
+            <GlassCard className="p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-xl font-semibold">수집완료 빠른추가</div>
+                  <div className="mt-1 text-sm text-white/55">
+                    사진 프리뷰 보고 드래그로 순서 정한 뒤 등록. 제목도 한꺼번에 편집 가능.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuickOpen(false);
+                    resetQuick();
+                  }}
+                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+                >
+                  닫기
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-4">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="text-sm text-white/70">
+                      여기에 이미지 드롭하거나, 파일 선택 (드래그로 순서 바꾸면 그 순서대로 등록)
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={onQuickFileChange}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-white hover:bg-white/15"
+                      >
+                        파일 선택
+                      </button>
+                      <div className="text-xs text-white/50">
+                        {quickEntries.length ? `${quickEntries.length}개 준비됨` : "아직 없음"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    className="mt-3 rounded-2xl border border-dashed border-white/10 bg-black/20 p-4 text-xs text-white/60"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const files = Array.from(e.dataTransfer.files || []).filter((f) =>
+                        f.type.startsWith("image/")
+                      );
+                      if (files.length) addQuickFiles(files);
+                    }}
+                  >
+                    드롭해서 추가 가능
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={resetTitlesToFilename}
+                      className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+                    >
+                      제목을 파일명으로 리셋
+                    </button>
+
+                    <input
+                      value={quickPrefix}
+                      onChange={(e) => setQuickPrefix(e.target.value)}
+                      placeholder="접두사 예: 모몽가 "
+                      className="w-56 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 outline-none placeholder:text-white/30"
+                    />
+                    <input
+                      value={quickSuffix}
+                      onChange={(e) => setQuickSuffix(e.target.value)}
+                      placeholder="접미사 예: (실물)"
+                      className="w-56 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 outline-none placeholder:text-white/30"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => setQuickNumbering((v) => !v)}
+                      className={`rounded-full border px-4 py-2 text-sm ${
+                        quickNumbering
+                          ? "border-white/20 bg-white/10 text-white"
+                          : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                      }`}
+                    >
+                      번호 붙이기
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={applyBulkTitles}
+                      className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-white hover:bg-white/15"
+                    >
+                      일괄 적용
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-4">
+                  {quickEntries.map((entry, idx) => (
+                    <div
+                      key={entry.id}
+                      draggable
+                      onDragStart={() => {
+                        dragIdRef.current = entry.id;
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onDrop={() => {
+                        const fromId = dragIdRef.current;
+                        if (!fromId) return;
+                        const fromIdx = quickEntries.findIndex((x) => x.id === fromId);
+                        if (fromIdx < 0) return;
+                        moveEntry(fromIdx, idx);
+                        dragIdRef.current = null;
+                      }}
+                      className="rounded-2xl border border-white/10 bg-white/5 p-3"
+                    >
+                      <div className="relative h-36 w-full overflow-hidden rounded-2xl">
+                        <img src={entry.previewUrl} alt={entry.title} className="h-full w-full object-cover" />
+                        <div className="pointer-events-none absolute left-2 top-2 rounded-full border border-white/10 bg-black/40 px-2 py-1 text-[11px] text-white/80 backdrop-blur">
+                          {idx + 1}
+                        </div>
+                      </div>
+
+                      <input
+                        value={entry.title}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setQuickEntries((prev) =>
+                            prev.map((x) => (x.id === entry.id ? { ...x, title: v } : x))
+                          );
+                        }}
+                        className="mt-2 w-full rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 outline-none"
+                      />
+
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <div className="truncate text-[11px] text-white/40">{entry.file.name}</div>
+                        <button
+                          type="button"
+                          onClick={() => removeQuickEntry(entry.id)}
+                          className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70 hover:bg-white/10"
+                        >
+                          제거
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div>
+                  <div className="text-sm text-white/70">메모(선택, 전체 동일 적용)</div>
+                  <input
+                    value={quickMemo}
+                    onChange={(e) => setQuickMemo(e.target.value)}
+                    placeholder="예: 2026년 2월 구매 / 오프라인 구매 / 구성품 포함"
+                    className="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 outline-none placeholder:text-white/30"
+                  />
+                </div>
+
+                <div className="mt-2 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => resetQuick()}
+                    className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+                  >
+                    전체 비우기
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={submitQuickCollected}
+                    disabled={quickUploading || quickEntries.length === 0}
+                    className="rounded-full border border-white/10 bg-white/10 px-5 py-2 text-sm text-white hover:bg-white/15 disabled:opacity-60"
+                  >
+                    {quickUploading ? "등록 중…" : "이 순서대로 수집완료에 등록"}
+                  </button>
+                </div>
+
+                <div className="text-right text-xs text-white/45">ESC로 닫기</div>
               </div>
             </GlassCard>
           </div>
