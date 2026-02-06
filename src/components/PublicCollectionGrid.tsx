@@ -15,12 +15,21 @@ function getMainImage(item: CollectionRow) {
   return item.image ?? null;
 }
 
-function stop(e: React.MouseEvent) {
-  e.preventDefault();
+// ✅ 모달 내부 클릭이 배경(onMouseDown)으로 전파되지 않게만 막는다
+function stopPropagationOnly(e: React.MouseEvent) {
   e.stopPropagation();
 }
 
-export default function PublicCollectionGrid({ items }: { items: CollectionRow[] }) {
+// ✅ 모달 카드 영역에서 마우스다운이 배경으로 전파되지 않게 막는다
+function stopMouseDown(e: React.MouseEvent) {
+  e.stopPropagation();
+}
+
+export default function PublicCollectionGrid({
+  items,
+}: {
+  items: CollectionRow[];
+}) {
   const [openId, setOpenId] = useState<string | null>(null);
 
   const selected = useMemo(
@@ -59,7 +68,7 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
               onClick={() => setOpenId(item.id)}
               className="text-left"
             >
-              <GlassCard className="p-0 overflow-hidden">
+              <GlassCard className="overflow-hidden p-0">
                 <div className="relative h-[220px]">
                   {img ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -88,11 +97,13 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
                         </span>
                       ) : null}
                     </div>
-                    <div className="mt-1 font-semibold text-white line-clamp-1">
+
+                    <div className="mt-1 line-clamp-1 font-semibold text-white">
                       {item.title ?? "제목 없음"}
                     </div>
+
                     {item.my_memo ? (
-                      <div className="mt-1 text-xs text-white/60 line-clamp-1">
+                      <div className="mt-1 line-clamp-1 text-xs text-white/60">
                         {item.my_memo}
                       </div>
                     ) : null}
@@ -116,9 +127,9 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
 
           <div
             className="relative w-full max-w-3xl"
-            onMouseDown={stop}
+            onMouseDown={stopMouseDown}
           >
-            <GlassCard className="p-0 overflow-hidden">
+            <GlassCard className="overflow-hidden p-0">
               <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
                 <div>
                   <div className="text-sm text-white/60">
@@ -142,7 +153,7 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
               <div className="grid gap-3 p-5 md:grid-cols-2">
                 {/* left: 상품 이미지 */}
                 <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
-                  <div className="px-4 py-3 text-sm text-white/70 border-b border-white/10">
+                  <div className="border-b border-white/10 px-4 py-3 text-sm text-white/70">
                     상품 이미지
                   </div>
                   <div className="relative aspect-[4/3]">
@@ -161,9 +172,9 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
                   </div>
                 </div>
 
-                {/* right: 내 사진 (수집완료에서 의미가 큼) */}
+                {/* right: 내 사진 */}
                 <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
-                  <div className="px-4 py-3 text-sm text-white/70 border-b border-white/10">
+                  <div className="border-b border-white/10 px-4 py-3 text-sm text-white/70">
                     내 사진
                   </div>
                   <div className="relative aspect-[4/3]">
@@ -198,18 +209,19 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
                 </div>
 
                 {selected.my_memo ? (
-                  <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/75 whitespace-pre-wrap">
+                  <div className="mt-3 whitespace-pre-wrap rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-white/75">
                     {selected.my_memo}
                   </div>
                 ) : null}
 
                 {selected.link ? (
                   <div className="mt-4 flex justify-end">
+                    {/* ✅ 외부 링크: preventDefault 금지, stopPropagation만 */}
                     <a
                       href={selected.link}
                       target="_blank"
-                      rel="noreferrer"
-                      onClick={stop}
+                      rel="noopener noreferrer"
+                      onClick={stopPropagationOnly}
                       className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
                     >
                       🔗 구매/정보 링크 열기

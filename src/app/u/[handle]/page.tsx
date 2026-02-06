@@ -1,4 +1,4 @@
-// app/u/[handle]/page.tsx
+// src/app/u/[handle]/page.tsx
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
@@ -44,7 +44,7 @@ export default async function PublicUserPage(props: {
   params: Promise<{ handle: string }>;
   searchParams?: Promise<{ tab?: string }>;
 }) {
-  /** ✅ Next.js 16 */
+  /** ✅ Next.js 16: params/searchParams는 Promise일 수 있음 */
   const params = await props.params;
   const searchParams = await props.searchParams;
 
@@ -55,7 +55,7 @@ export default async function PublicUserPage(props: {
 
   const supabase = getSupabaseServer();
 
-  /** 1️⃣ 프로필 */
+  /** 1) 프로필 */
   const { data: profile, error: profileErr } = await supabase
     .from("profiles")
     .select("id, handle, display_name, avatar_url, is_public")
@@ -65,7 +65,7 @@ export default async function PublicUserPage(props: {
   if (profileErr) console.error("profiles fetch error:", profileErr);
   if (!profile || !profile.is_public) notFound();
 
-  /** 2️⃣ 컬렉션 */
+  /** 2) 컬렉션 */
   const { data: rows, error: colErr } = await supabase
     .from("collections")
     .select(
@@ -85,8 +85,8 @@ export default async function PublicUserPage(props: {
 
   return (
     <section className="mx-auto max-w-6xl px-4 py-10">
-      {/* ✅ 상단: 뒤로가기(홈 수집탭) */}
-      <div className="mb-4 flex items-center justify-between">
+      {/* ✅ 선택사항(상단 돌아가기 버튼) : section 맨 위에 붙이면 끝 */}
+      <div className="mb-5 flex items-center justify-between">
         <Link
           href="/?tab=collection"
           className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
@@ -94,11 +94,7 @@ export default async function PublicUserPage(props: {
           ← 홈(수집탭)
         </Link>
 
-        {/* 필요하면 우측에 홈으로도 */}
-        <Link
-          href="/"
-          className="text-sm text-white/50 hover:text-white/70"
-        >
+        <Link href="/" className="text-sm text-white/50 hover:text-white/80">
           홈으로
         </Link>
       </div>
@@ -126,7 +122,8 @@ export default async function PublicUserPage(props: {
               {profile.display_name ?? profile.handle}
             </h1>
             <p className="text-sm text-white/60">
-              @{profile.handle} · 수집중 {collectingCount} · 수집완료 {collectedCount}
+              @{profile.handle} · 수집중 {collectingCount} · 수집완료{" "}
+              {collectedCount}
             </p>
           </div>
         </div>
@@ -136,7 +133,7 @@ export default async function PublicUserPage(props: {
             <Link
               key={t}
               href={`/u/${encodeURIComponent(profile.handle)}?tab=${t}`}
-              className={`rounded-full px-4 py-2 text-sm border ${
+              className={`rounded-full border px-4 py-2 text-sm ${
                 tab === t
                   ? "border-white/20 bg-white/15"
                   : "border-white/10 bg-white/5 hover:bg-white/10"
@@ -146,7 +143,7 @@ export default async function PublicUserPage(props: {
             </Link>
           ))}
 
-          {/* ✅ 본인일 때만 보이는 버튼 (컴포넌트 내부에서 체크) */}
+          {/* ✅ 본인일 때만 보이는 버튼(컴포넌트 내부에서 판별) */}
           <OwnerManageButton ownerId={profile.id} />
         </div>
       </div>
