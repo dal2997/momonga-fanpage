@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase/client";
 
 type TabKey = "home" | "gallery" | "collection" | "profile";
@@ -65,6 +65,44 @@ export default function TopTabs({
   value: TabKey;
   onChange: (t: TabKey) => void;
 }) {
+  const [isAuthed, setIsAuthed] = useState<boolean>(false);
+
+  // ✅ 여기만 바꾸면 공개 수집 주인 변경 가능
+  const publicHandle = "dal2997";
+  const publicCollectionHref = `/u/${encodeURIComponent(publicHandle)}`;
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      setIsAuthed(!!data.user);
+    })();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthed(!!session?.user);
+    });
+
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  const handleTabClick = useCallback(
+    (key: TabKey) => {
+      // ✅ 수집: 로그아웃이면 공개 페이지로 보내기
+      if (key === "collection" && !isAuthed) {
+        window.location.href = publicCollectionHref;
+        return;
+      }
+
+      // ✅ 프로필: 로그아웃이면 로그인으로 보내기 (원치 않으면 이 블록 삭제)
+      if (key === "profile" && !isAuthed) {
+        window.location.href = "/login";
+        return;
+      }
+
+      onChange(key);
+    },
+    [isAuthed, onChange, publicCollectionHref]
+  );
+
   return (
     <header className="fixed inset-x-0 top-0 z-50">
       <div className="pointer-events-none absolute inset-0 border-b border-white/10 bg-black/30 backdrop-blur-xl" />
@@ -73,7 +111,7 @@ export default function TopTabs({
         {/* LEFT: 로고 */}
         <button
           type="button"
-          onClick={() => onChange("home")}
+          onClick={() => handleTabClick("home")}
           className="z-10 text-sm font-semibold tracking-wide text-white/90 hover:text-white"
           aria-label="Go Home"
         >
@@ -89,7 +127,7 @@ export default function TopTabs({
                 <button
                   key={t.key}
                   type="button"
-                  onClick={() => onChange(t.key)}
+                  onClick={() => handleTabClick(t.key)}
                   className={[
                     "rounded-full px-4 py-2 text-sm transition",
                     active
