@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import GlassCard from "@/components/layout/GlassCard";
 import { CollectItem } from "@/data/collection";
 import {
@@ -9,7 +9,7 @@ import {
   updateCollectItem,
   deleteCollectItem,
 } from "@/lib/collectionService";
-import { uploadToMomongaBucket } from "@/lib/storageService";
+import { uploadToMomongaBucket, removeByPublicUrl } from "@/lib/storageService";
 import { supabase } from "@/lib/supabase/client";
 
 type ViewMode = "collecting" | "collected";
@@ -57,11 +57,18 @@ export default function Collection() {
   const [loading, setLoading] = useState(true);
   const [needLogin, setNeedLogin] = useState(false);
 
-  // 수집완료 이동 입력(내 사진/메모)
+  // 수집중 -> 수집완료 이동 입력(내 사진/메모)
   const [myFile, setMyFile] = useState<File | null>(null);
   const [myMemo, setMyMemo] = useState("");
 
-  // 수정 모드
+  // ✅ 수집완료에서 "내 사진/메모" 수정용 상태
+  const [editMyMemo, setEditMyMemo] = useState("");
+  const [editMyImageMode, setEditMyImageMode] = useState<"keep" | "url" | "upload">("keep");
+  const [editMyImageUrl, setEditMyImageUrl] = useState("");
+  const [editMyImageFile, setEditMyImageFile] = useState<File | null>(null);
+  const [myDeleteRequested, setMyDeleteRequested] = useState(false);
+
+  // 수정 모드(상품 정보)
   const [editMode, setEditMode] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editLink, setEditLink] = useState("");
@@ -235,25 +242,30 @@ export default function Collection() {
     setOpen(item);
     setEditMode(false);
 
+    // 상품 수정값
     setEditTitle(item.title ?? "");
     setEditLink(item.link ?? "");
     setEditOriginal(
-      item.originalPrice === null || item.originalPrice === undefined
-        ? ""
-        : String(item.originalPrice)
+      item.originalPrice === null || item.originalPrice === undefined ? "" : String(item.originalPrice)
     );
     setEditUsed(
-      item.usedPrice === null || item.usedPrice === undefined
-        ? ""
-        : String(item.usedPrice)
+      item.usedPrice === null || item.usedPrice === undefined ? "" : String(item.usedPrice)
     );
 
     setEditImageMode("url");
     setEditImageUrl(item.image ?? "");
     setEditImageFile(null);
 
+    // 수집중 -> 완료 이동용
     setMyFile(null);
     setMyMemo(item.myMemo ?? "");
+
+    // ✅ 수집완료 내 사진 수정 초기화
+    setEditMyMemo(item.myMemo ?? "");
+    setEditMyImageMode("keep");
+    setEditMyImageUrl(item.myImage ?? "");
+    setEditMyImageFile(null);
+    setMyDeleteRequested(false);
   }
 
   async function submitAddCollecting() {
@@ -306,9 +318,7 @@ export default function Collection() {
     } catch (e: any) {
       console.error(e);
       const msg =
-        e?.message ||
-        e?.error_description ||
-        (typeof e === "string" ? e : JSON.stringify(e));
+        e?.message || e?.error_description || (typeof e === "string" ? e : JSON.stringify(e));
       alert(`저장 실패: ${msg}`);
     } finally {
       setSavingAdd(false);
@@ -325,9 +335,7 @@ export default function Collection() {
         return;
       }
 
-      const myImage = myFile
-        ? await uploadToMomongaBucket(myFile, `collected/${userId}`)
-        : null;
+      const myImage = myFile ? await uploadToMomongaBucket(myFile, `collected/${userId}`) : null;
 
       await updateCollectItem(userId, item.id, {
         status: "collected",
@@ -359,6 +367,9 @@ export default function Collection() {
 
     setSavingEdit(true);
     try {
+      // =========================
+      // 1) 상품 이미지 처리
+      // =========================
       let image = open.image ?? null;
 
       if (editImageMode === "url") {
@@ -371,21 +382,84 @@ export default function Collection() {
         image = await uploadToMomongaBucket(editImageFile, `${open.status}/${userId}`);
       }
 
-      await updateCollectItem(userId, open.id, {
+      // =========================
+      // 2) 내 사진(수집완료) 처리
+      // =========================
+      let myImage: string | null | undefined = undefined;
+      let nextMyMemo: string | null | undefined = undefined;
+
+      if (open.status === "collected") {
+        nextMyMemo = editMyMemo.trim() ? editMyMemo.trim() : null;
+
+        if (myDeleteRequested) {
+          // (선택) 스토리지 삭제 시도
+          if (open.myImage) {
+            try {
+              await removeByPublicUrl(open.myImage);
+            } catch {
+              // 실패해도 DB는 비워줄 수 있게 진행
+            }
+          }
+          myImage = null;
+        } else if (editMyImageMode === "keep") {
+          myImage = open.myImage ?? null;
+        } else if (editMyImageMode === "url") {
+          myImage = editMyImageUrl.trim() ? editMyImageUrl.trim() : null;
+        } else {
+          // upload
+          if (!editMyImageFile) {
+            alert("내 사진 업로드 파일을 선택해줘.");
+            return;
+          }
+
+          // (선택) 기존 내 사진 삭제 시도
+          if (open.myImage) {
+            try {
+              await removeByPublicUrl(open.myImage);
+            } catch {}
+          }
+
+          myImage = await uploadToMomongaBucket(editMyImageFile, `collected/${userId}`);
+        }
+      }
+
+      // =========================
+      // 3) 업데이트 patch 구성
+      // =========================
+      const patch: any = {
         title: editTitle.trim() ? editTitle.trim() : open.title,
         link: editLink.trim() ? editLink.trim() : null,
         image,
         originalPrice: parsePrice(editOriginal),
         usedPrice: parsePrice(editUsed),
-      });
+      };
+
+      if (open.status === "collected") {
+        patch.myImage = myImage;
+        patch.myMemo = nextMyMemo;
+      }
+
+      await updateCollectItem(userId, open.id, patch);
 
       await refreshFromDb(userId);
 
-      setOpen((prev) => (prev ? { ...prev, image: image ?? prev.image } : prev));
+      // 모달 내 상태 즉시 반영
+      setOpen((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          ...patch,
+        };
+      });
 
       setEditMode(false);
       setEditImageFile(null);
       setEditImageMode("url");
+
+      // 내 사진 수정 상태 리셋
+      setEditMyImageFile(null);
+      setEditMyImageMode("keep");
+      setMyDeleteRequested(false);
     } catch (e) {
       console.error(e);
       alert("수정 저장 실패 (콘솔 확인)");
@@ -491,8 +565,6 @@ export default function Collection() {
       for (const entry of quickEntries) {
         const myUrl = await uploadToMomongaBucket(entry.file, `collected/${userId}`);
 
-        // ✅ “수집완료 빠른추가”는 상품이미지/가격/링크 없이도 등록되게
-        // (현재 DB가 image NOT NULL이면 여기서 image=myUrl로 넣어둬야 등록됨)
         await insertCollectItem(userId, {
           id: crypto.randomUUID(),
           title: entry.title.trim() || baseName(entry.file.name),
@@ -514,9 +586,7 @@ export default function Collection() {
     } catch (e: any) {
       console.error(e);
       const msg =
-        e?.message ||
-        e?.error_description ||
-        (typeof e === "string" ? e : JSON.stringify(e));
+        e?.message || e?.error_description || (typeof e === "string" ? e : JSON.stringify(e));
       alert(`빠른추가 실패: ${msg}`);
     } finally {
       setQuickUploading(false);
@@ -751,7 +821,9 @@ export default function Collection() {
 
               <div className="px-6 py-5">
                 <div className="flex items-center justify-between">
-                  <div className="text-lg font-semibold">{open.status === "collecting" ? "수집중 상세" : "내 수집품"}</div>
+                  <div className="text-lg font-semibold">
+                    {open.status === "collecting" ? "수집중 상세" : "내 수집품"}
+                  </div>
 
                   <div className="flex gap-2">
                     <button
@@ -786,6 +858,7 @@ export default function Collection() {
 
                 {editMode && (
                   <div className="mt-4 grid gap-4">
+                    {/* ===== 상품 정보 수정 ===== */}
                     <div className="grid gap-4 md:grid-cols-2">
                       <div>
                         <div className="text-sm text-white/70">이름</div>
@@ -886,11 +959,127 @@ export default function Collection() {
                               className="hidden"
                               onChange={(e) => setEditImageFile(e.target.files?.[0] ?? null)}
                             />
-                            <span className="text-white/40">{editImageFile ? editImageFile.name : "선택된 파일 없음"}</span>
+                            <span className="text-white/40">
+                              {editImageFile ? editImageFile.name : "선택된 파일 없음"}
+                            </span>
                           </label>
                         </div>
                       )}
                     </div>
+
+                    {/* ===== ✅ 수집완료 전용: 내 사진/메모 수정 ===== */}
+                    {open.status === "collected" && (
+                      <div className="mt-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                        <div className="text-sm font-semibold text-white/85">내 사진 / 메모</div>
+
+                        <div className="mt-3">
+                          <div className="text-sm text-white/70">내 사진</div>
+
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMyDeleteRequested(false);
+                                setEditMyImageMode("keep");
+                              }}
+                              className={`rounded-full border px-4 py-2 text-sm ${
+                                editMyImageMode === "keep" && !myDeleteRequested
+                                  ? "border-white/20 bg-white/10 text-white"
+                                  : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                              }`}
+                            >
+                              유지
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMyDeleteRequested(false);
+                                setEditMyImageMode("url");
+                                setEditMyImageFile(null);
+                              }}
+                              className={`rounded-full border px-4 py-2 text-sm ${
+                                editMyImageMode === "url" && !myDeleteRequested
+                                  ? "border-white/20 bg-white/10 text-white"
+                                  : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                              }`}
+                            >
+                              URL
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMyDeleteRequested(false);
+                                setEditMyImageMode("upload");
+                                setEditMyImageUrl("");
+                              }}
+                              className={`rounded-full border px-4 py-2 text-sm ${
+                                editMyImageMode === "upload" && !myDeleteRequested
+                                  ? "border-white/20 bg-white/10 text-white"
+                                  : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                              }`}
+                            >
+                              업로드
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMyDeleteRequested(true);
+                                setEditMyImageMode("keep");
+                                setEditMyImageFile(null);
+                              }}
+                              className={`rounded-full border px-4 py-2 text-sm ${
+                                myDeleteRequested
+                                  ? "border-red-400/30 bg-red-500/15 text-red-50"
+                                  : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                              }`}
+                            >
+                              내 사진 삭제
+                            </button>
+                          </div>
+
+                          {!myDeleteRequested && editMyImageMode === "url" && (
+                            <div className="mt-3">
+                              <input
+                                value={editMyImageUrl}
+                                onChange={(e) => setEditMyImageUrl(e.target.value)}
+                                placeholder="https://... (내 사진 URL)"
+                                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 outline-none"
+                              />
+                            </div>
+                          )}
+
+                          {!myDeleteRequested && editMyImageMode === "upload" && (
+                            <div className="mt-3">
+                              <label className="inline-flex cursor-pointer items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10">
+                                파일 선택
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={(e) => setEditMyImageFile(e.target.files?.[0] ?? null)}
+                                />
+                                <span className="text-white/40">
+                                  {editMyImageFile ? editMyImageFile.name : "선택된 파일 없음"}
+                                </span>
+                              </label>
+                            </div>
+                          )}
+
+                          <div className="mt-4">
+                            <div className="text-sm text-white/70">메모</div>
+                            <input
+                              value={editMyMemo}
+                              onChange={(e) => setEditMyMemo(e.target.value)}
+                              placeholder="예: 실물 미쳤다 / 구성품 완벽 / 배송완료"
+                              className="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 outline-none placeholder:text-white/30"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex justify-end">
                       <button
@@ -916,7 +1105,12 @@ export default function Collection() {
                         <div className="text-sm text-white/70">내 사진 업로드 (선택)</div>
                         <label className="mt-2 inline-flex cursor-pointer items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10">
                           파일 선택
-                          <input type="file" accept="image/*" className="hidden" onChange={(e) => setMyFile(e.target.files?.[0] ?? null)} />
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => setMyFile(e.target.files?.[0] ?? null)}
+                          />
                           <span className="text-white/40">{myFile ? myFile.name : "선택된 파일 없음"}</span>
                         </label>
                       </div>
@@ -946,7 +1140,7 @@ export default function Collection() {
                   </>
                 )}
 
-                {open.status === "collected" && (
+                {open.status === "collected" && !editMode && (
                   <div className="mt-4 text-sm text-white/70">{open.myMemo ? open.myMemo : "메모 없음"}</div>
                 )}
               </div>
