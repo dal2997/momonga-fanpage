@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import GlassCard from "@/components/layout/GlassCard";
 import { CollectItem } from "@/data/collection";
 import {
@@ -11,6 +11,7 @@ import {
 } from "@/lib/collectionService";
 import { uploadToMomongaBucket, removeByPublicUrl } from "@/lib/storageService";
 import { supabase } from "@/lib/supabase/client";
+import { hashFile } from "@/lib/fileHash";
 
 type ViewMode = "collecting" | "collected";
 
@@ -28,7 +29,11 @@ function parsePrice(input: string) {
 
 function isProbablyImageUrl(url: string) {
   const u = url.trim().toLowerCase();
-  return u.startsWith("http://") || u.startsWith("https://") || u.startsWith("data:image/");
+  return (
+    u.startsWith("http://") ||
+    u.startsWith("https://") ||
+    u.startsWith("data:image/")
+  );
 }
 
 function baseName(fileName: string) {
@@ -42,7 +47,24 @@ type QuickEntry = {
   file: File;
   previewUrl: string;
   title: string;
+  hash: string;
 };
+
+function withTimeout<T>(p: Promise<T>, ms: number, label = "timeout") {
+  return new Promise<T>((resolve, reject) => {
+    const id = setTimeout(() => reject(new Error(label)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(id);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(id);
+        reject(e);
+      }
+    );
+  });
+}
 
 export default function Collection() {
   const [view, setView] = useState<ViewMode>("collecting");
@@ -57,13 +79,17 @@ export default function Collection() {
   const [loading, setLoading] = useState(true);
   const [needLogin, setNeedLogin] = useState(false);
 
+  // ✅ 로딩 고착 방지: 에러 메시지 + 재시도
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+
   // 수집중 -> 수집완료 이동 입력(내 사진/메모)
   const [myFile, setMyFile] = useState<File | null>(null);
   const [myMemo, setMyMemo] = useState("");
 
   // ✅ 수집완료에서 "내 사진/메모" 수정용 상태
   const [editMyMemo, setEditMyMemo] = useState("");
-  const [editMyImageMode, setEditMyImageMode] = useState<"keep" | "url" | "upload">("keep");
+  const [editMyImageMode, setEditMyImageMode] =
+    useState<"keep" | "url" | "upload">("keep");
   const [editMyImageUrl, setEditMyImageUrl] = useState("");
   const [editMyImageFile, setEditMyImageFile] = useState<File | null>(null);
   const [myDeleteRequested, setMyDeleteRequested] = useState(false);
@@ -109,8 +135,12 @@ export default function Collection() {
   const [moving, setMoving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // ✅ 레이스 방지용 request id
+  const reqIdRef = useRef(0);
+  const aliveRef = useRef(true);
+
   // DB -> UI 변환 (snake_case -> camelCase)
-  function mapRowToItem(r: any): CollectItem {
+  const mapRowToItem = useCallback((r: any): CollectItem => {
     return {
       id: r.id,
       title: r.title,
@@ -122,55 +152,45 @@ export default function Collection() {
       myImage: r.my_image,
       myMemo: r.my_memo,
     };
-  }
+  }, []);
 
-  async function refreshFromDb(uid: string) {
+  const refreshFromDb = useCallback(async (uid: string) => {
     const rows = await fetchCollection(uid);
 
-    const nextCollecting = rows.filter((r: any) => r.status === "collecting").map(mapRowToItem);
-    const nextCollected = rows.filter((r: any) => r.status === "collected").map(mapRowToItem);
+    const nextCollecting = rows
+      .filter((r: any) => r.status === "collecting")
+      .map(mapRowToItem);
+
+    const nextCollected = rows
+      .filter((r: any) => r.status === "collected")
+      .map(mapRowToItem);
 
     setCollecting(nextCollecting);
     setCollected(nextCollected);
-  }
+  }, [mapRowToItem]);
 
-  // ✅ 최초 진입: 세션 확인 → 있으면 uid 저장 후 fetch
-  useEffect(() => {
-    let alive = true;
+  const quickHashSetRef = useRef<Set<string>>(new Set());
 
-    (async () => {
-      try {
-        setLoading(true);
+  const load = useCallback(async () => {
+    const myReqId = ++reqIdRef.current;
 
-        const { data } = await supabase.auth.getSession();
-        const uid = data.session?.user?.id ?? null;
+    setLoading(true);
+    setLoadErr(null);
 
-        if (!alive) return;
+    const timeoutMs = 15000;
 
-        if (!uid) {
-          setUserId(null);
-          setNeedLogin(true);
-          setCollecting([]);
-          setCollected([]);
-          return;
-        }
+    try {
+      const { data: userData, error: userErr } = await withTimeout(
+        supabase.auth.getUser(),
+        timeoutMs
+      );
 
-        setUserId(uid);
-        setNeedLogin(false);
+      if (!aliveRef.current) return;
+      if (myReqId !== reqIdRef.current) return;
 
-        await refreshFromDb(uid);
-      } catch (e) {
-        console.error("Collection init failed", e);
-        setNeedLogin(true);
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
+      if (userErr) throw userErr;
 
-    // 로그인 상태 변화 반영
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      const uid = session?.user?.id ?? null;
-      if (!alive) return;
+      const uid = userData.user?.id ?? null;
 
       if (!uid) {
         setUserId(null);
@@ -181,25 +201,53 @@ export default function Collection() {
         setAddOpen(false);
         setEditMode(false);
         setQuickOpen(false);
-        setLoading(false);
         return;
       }
 
       setUserId(uid);
       setNeedLogin(false);
-      setLoading(true);
-      try {
-        await refreshFromDb(uid);
-      } finally {
-        if (alive) setLoading(false);
+
+      await withTimeout(refreshFromDb(uid), timeoutMs);
+
+      if (!aliveRef.current) return;
+      if (myReqId !== reqIdRef.current) return;
+    } catch (e: any) {
+      console.error("[Collection] load failed:", e);
+
+      if (!aliveRef.current) return;
+      if (myReqId !== reqIdRef.current) return;
+
+      if (String(e?.message).toLowerCase().includes("timeout")) {
+        setLoadErr("불러오기가 오래 걸려서 중단했어. 다시 시도해줘.");
+      } else {
+        setLoadErr(e?.message ?? "불러오기 실패. 다시 시도해줘.");
       }
+    } finally {
+      if (!aliveRef.current) return;
+      if (myReqId !== reqIdRef.current) return;
+
+      setLoading(false);
+    }
+  
+  }, [refreshFromDb]);
+
+
+
+  // ✅ 최초 진입 + auth 변화 시 load()로 통일
+  useEffect(() => {
+    aliveRef.current = true;
+    load();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event) => {
+      // SIGNED_IN / SIGNED_OUT / TOKEN_REFRESHED 등 무엇이든 load로 재정렬
+      load();
     });
 
     return () => {
-      alive = false;
+      aliveRef.current = false;
       sub.subscription.unsubscribe();
     };
-  }, []);
+  }, [load]);
 
   // ESC로 닫기
   useEffect(() => {
@@ -236,6 +284,8 @@ export default function Collection() {
     setQuickPrefix("");
     setQuickSuffix("");
     setQuickNumbering(true);
+
+    quickHashSetRef.current.clear();
   }
 
   function openDetail(item: CollectItem) {
@@ -246,10 +296,14 @@ export default function Collection() {
     setEditTitle(item.title ?? "");
     setEditLink(item.link ?? "");
     setEditOriginal(
-      item.originalPrice === null || item.originalPrice === undefined ? "" : String(item.originalPrice)
+      item.originalPrice === null || item.originalPrice === undefined
+        ? ""
+        : String(item.originalPrice)
     );
     setEditUsed(
-      item.usedPrice === null || item.usedPrice === undefined ? "" : String(item.usedPrice)
+      item.usedPrice === null || item.usedPrice === undefined
+        ? ""
+        : String(item.usedPrice)
     );
 
     setEditImageMode("url");
@@ -311,14 +365,17 @@ export default function Collection() {
         status: "collecting",
       });
 
-      await refreshFromDb(userId);
+      // ✅ 여기서도 load()로 통일하면 꼬임이 줄어든다
+      await load();
 
       setAddOpen(false);
       resetAddForm();
     } catch (e: any) {
       console.error(e);
       const msg =
-        e?.message || e?.error_description || (typeof e === "string" ? e : JSON.stringify(e));
+        e?.message ||
+        e?.error_description ||
+        (typeof e === "string" ? e : JSON.stringify(e));
       alert(`저장 실패: ${msg}`);
     } finally {
       setSavingAdd(false);
@@ -335,7 +392,9 @@ export default function Collection() {
         return;
       }
 
-      const myImage = myFile ? await uploadToMomongaBucket(myFile, `collected/${userId}`) : null;
+      const myImage = myFile
+        ? await uploadToMomongaBucket(myFile, `collected/${userId}`)
+        : null;
 
       await updateCollectItem(userId, item.id, {
         status: "collected",
@@ -343,7 +402,7 @@ export default function Collection() {
         myMemo: myMemo.trim() ? myMemo.trim() : null,
       });
 
-      await refreshFromDb(userId);
+      await load();
 
       setOpen(null);
       setMyFile(null);
@@ -392,13 +451,10 @@ export default function Collection() {
         nextMyMemo = editMyMemo.trim() ? editMyMemo.trim() : null;
 
         if (myDeleteRequested) {
-          // (선택) 스토리지 삭제 시도
           if (open.myImage) {
             try {
               await removeByPublicUrl(open.myImage);
-            } catch {
-              // 실패해도 DB는 비워줄 수 있게 진행
-            }
+            } catch {}
           }
           myImage = null;
         } else if (editMyImageMode === "keep") {
@@ -406,13 +462,11 @@ export default function Collection() {
         } else if (editMyImageMode === "url") {
           myImage = editMyImageUrl.trim() ? editMyImageUrl.trim() : null;
         } else {
-          // upload
           if (!editMyImageFile) {
             alert("내 사진 업로드 파일을 선택해줘.");
             return;
           }
 
-          // (선택) 기존 내 사진 삭제 시도
           if (open.myImage) {
             try {
               await removeByPublicUrl(open.myImage);
@@ -441,22 +495,18 @@ export default function Collection() {
 
       await updateCollectItem(userId, open.id, patch);
 
-      await refreshFromDb(userId);
+      await load();
 
       // 모달 내 상태 즉시 반영
       setOpen((prev) => {
         if (!prev) return prev;
-        return {
-          ...prev,
-          ...patch,
-        };
+        return { ...prev, ...patch };
       });
 
       setEditMode(false);
       setEditImageFile(null);
       setEditImageMode("url");
 
-      // 내 사진 수정 상태 리셋
       setEditMyImageFile(null);
       setEditMyImageMode("keep");
       setMyDeleteRequested(false);
@@ -483,7 +533,7 @@ export default function Collection() {
       }
 
       await deleteCollectItem(userId, open.id);
-      await refreshFromDb(userId);
+      await load();
 
       setOpen(null);
       setEditMode(false);
@@ -498,20 +548,36 @@ export default function Collection() {
   // =========================
   // ✅ 수집완료 빠른추가 로직
   // =========================
-  function addQuickFiles(files: File[]) {
-    const next: QuickEntry[] = files.map((f) => ({
-      id: crypto.randomUUID(),
-      file: f,
-      previewUrl: URL.createObjectURL(f),
-      title: baseName(f.name),
-    }));
+  async function addQuickFiles(files: File[]) {
+    const onlyImages = files.filter((f) => f.type.startsWith("image/"));
+    if (onlyImages.length === 0) return;
+
+    const next: QuickEntry[] = [];
+
+    for (const f of onlyImages) {
+      const h = await hashFile(f);
+
+      if (quickHashSetRef.current.has(h)) continue; // ✅ 중복 스킵
+      quickHashSetRef.current.add(h);
+
+      next.push({
+        id: crypto.randomUUID(),
+        file: f,
+        previewUrl: URL.createObjectURL(f),
+        title: baseName(f.name),
+        hash: h,
+      });
+    }
+
+    if (next.length === 0) return;
     setQuickEntries((prev) => [...prev, ...next]);
   }
 
-  function onQuickFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+
+  async function onQuickFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0) return;
-    addQuickFiles(files);
+    await addQuickFiles(files);
     e.target.value = "";
   }
 
@@ -542,7 +608,10 @@ export default function Collection() {
   function removeQuickEntry(id: string) {
     setQuickEntries((prev) => {
       const target = prev.find((x) => x.id === id);
-      if (target) URL.revokeObjectURL(target.previewUrl);
+      if (target) {
+        URL.revokeObjectURL(target.previewUrl);
+        quickHashSetRef.current.delete(target.hash); // ✅ 추가
+      }
       return prev.filter((x) => x.id !== id);
     });
   }
@@ -578,7 +647,7 @@ export default function Collection() {
         });
       }
 
-      await refreshFromDb(userId);
+      await load();
 
       setQuickOpen(false);
       resetQuick();
@@ -586,7 +655,9 @@ export default function Collection() {
     } catch (e: any) {
       console.error(e);
       const msg =
-        e?.message || e?.error_description || (typeof e === "string" ? e : JSON.stringify(e));
+        e?.message ||
+        e?.error_description ||
+        (typeof e === "string" ? e : JSON.stringify(e));
       alert(`빠른추가 실패: ${msg}`);
     } finally {
       setQuickUploading(false);
@@ -661,7 +732,9 @@ export default function Collection() {
       {needLogin && (
         <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5 text-white/80">
           <div className="text-sm">로그인하면 내 수집 데이터를 불러오고 저장할 수 있어.</div>
-          <div className="mt-2 text-xs text-white/60">로그인 후 다시 이 탭을 열면 자동으로 불러와져.</div>
+          <div className="mt-2 text-xs text-white/60">
+            로그인 후 다시 이 탭을 열면 자동으로 불러와져.
+          </div>
 
           <div className="mt-4 flex gap-2">
             <a
@@ -672,87 +745,115 @@ export default function Collection() {
             </a>
             <button
               type="button"
-              onClick={() => window.location.reload()}
+              onClick={() => load()}
               className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
             >
-              새로고침
+              다시 시도
             </button>
           </div>
         </div>
       )}
 
-      {loading && <div className="mt-6 text-sm text-white/60">불러오는 중…</div>}
+      {loading && (
+        <div className="mt-6 text-sm text-white/60">
+          불러오는 중…
+          {loadErr ? (
+            <div className="mt-2 text-xs text-red-400">
+              {loadErr}{" "}
+              <button className="underline" onClick={() => load()}>
+                다시 시도
+              </button>
+            </div>
+          ) : null}
+        </div>
+      )}
 
       {!loading && !needLogin && (
-        <div className="mt-6 grid gap-6 md:grid-cols-3">
-          {list.map((item) => (
-            <button key={item.id} type="button" onClick={() => openDetail(item)} className="text-left">
-              <GlassCard className="group overflow-hidden p-0">
-                <div className="relative h-[220px] w-full overflow-hidden rounded-2xl">
-                  {/* 카드 썸네일: 수집완료면 2분할(상품/내사진) */}
-                  {item.status === "collected" ? (
-                    <div className="grid h-full w-full grid-cols-2">
-                      {item.image ? (
-                        <img
-                          src={item.image}
-                          alt={`${item.title} 상품 이미지`}
-                          className="block h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.04]"
-                        />
-                      ) : (
-                        <div className="grid h-full place-items-center bg-white/[0.03] text-xs text-white/50">
-                          상품 이미지 없음
-                        </div>
-                      )}
+        <>
+          {loadErr && (
+            <div className="mt-6 rounded-2xl border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-100">
+              {loadErr}{" "}
+              <button className="underline" onClick={() => load()}>
+                다시 시도
+              </button>
+            </div>
+          )}
 
-                      {item.myImage ? (
-                        <img
-                          src={item.myImage}
-                          alt={`${item.title} 내 사진`}
-                          className="block h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.04]"
-                        />
-                      ) : (
-                        <div className="grid h-full place-items-center bg-white/[0.03] text-xs text-white/50">
-                          내 사진 없음
-                        </div>
-                      )}
+          <div className="mt-6 grid gap-6 md:grid-cols-3">
+            {list.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => openDetail(item)}
+                className="text-left"
+              >
+                <GlassCard className="group overflow-hidden p-0">
+                  <div className="relative h-[220px] w-full overflow-hidden rounded-2xl">
+                    {/* 카드 썸네일: 수집완료면 2분할(상품/내사진) */}
+                    {item.status === "collected" ? (
+                      <div className="grid h-full w-full grid-cols-2">
+                        {item.image ? (
+                          <img
+                            src={item.image}
+                            alt={`${item.title} 상품 이미지`}
+                            className="block h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.04]"
+                          />
+                        ) : (
+                          <div className="grid h-full place-items-center bg-white/[0.03] text-xs text-white/50">
+                            상품 이미지 없음
+                          </div>
+                        )}
+
+                        {item.myImage ? (
+                          <img
+                            src={item.myImage}
+                            alt={`${item.title} 내 사진`}
+                            className="block h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.04]"
+                          />
+                        ) : (
+                          <div className="grid h-full place-items-center bg-white/[0.03] text-xs text-white/50">
+                            내 사진 없음
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <img
+                        src={item.image ?? ""}
+                        alt={item.title}
+                        className="block h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.04]"
+                      />
+                    )}
+
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/65 via-black/15 to-black/0" />
+
+                    {item.status === "collected" && (
+                      <div className="pointer-events-none absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/30 px-3 py-1 text-[11px] text-white/80 backdrop-blur">
+                        <span>상품</span>
+                        <span className="text-white/40">|</span>
+                        <span>내사진</span>
+                      </div>
+                    )}
+
+                    <div className="absolute bottom-0 left-0 right-0 p-4">
+                      <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/80 backdrop-blur">
+                        {item.status === "collecting" ? "수집중" : "수집완료"}
+                        <span className="text-white/40">•</span>
+                        <span className="text-white/70">
+                          원가 {formatPrice(item.originalPrice)} / 중고 {formatPrice(item.usedPrice)}
+                        </span>
+                        {item.link ? <span className="text-white/70">• 🔗</span> : null}
+                      </div>
+
+                      <div className="mt-2 line-clamp-1 text-lg font-semibold">{item.title}</div>
                     </div>
-                  ) : (
-                    <img
-                      src={item.image ?? ""}
-                      alt={item.title}
-                      className="block h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.04]"
-                    />
-                  )}
-
-                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/65 via-black/15 to-black/0" />
-
-                  {item.status === "collected" && (
-                    <div className="pointer-events-none absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/30 px-3 py-1 text-[11px] text-white/80 backdrop-blur">
-                      <span>상품</span>
-                      <span className="text-white/40">|</span>
-                      <span>내사진</span>
-                    </div>
-                  )}
-
-                  <div className="absolute bottom-0 left-0 right-0 p-4">
-                    <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/80 backdrop-blur">
-                      {item.status === "collecting" ? "수집중" : "수집완료"}
-                      <span className="text-white/40">•</span>
-                      <span className="text-white/70">
-                        원가 {formatPrice(item.originalPrice)} / 중고 {formatPrice(item.usedPrice)}
-                      </span>
-                      {item.link ? <span className="text-white/70">• 🔗</span> : null}
-                    </div>
-
-                    <div className="mt-2 line-clamp-1 text-lg font-semibold">{item.title}</div>
                   </div>
-                </div>
 
-                <div className="pointer-events-none h-10 w-full bg-white/[0.02] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-              </GlassCard>
-            </button>
-          ))}
-        </div>
+                  <div className="pointer-events-none h-10 w-full bg-white/[0.02] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                </GlassCard>
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
       {/* 상세 모달 */}
@@ -1365,13 +1466,13 @@ export default function Collection() {
                       e.preventDefault();
                       e.stopPropagation();
                     }}
-                    onDrop={(e) => {
+                    onDrop={async (e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       const files = Array.from(e.dataTransfer.files || []).filter((f) =>
                         f.type.startsWith("image/")
                       );
-                      if (files.length) addQuickFiles(files);
+                      if (files.length) await addQuickFiles(files);
                     }}
                   >
                     드롭해서 추가 가능

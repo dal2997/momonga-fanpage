@@ -1,11 +1,18 @@
+// lib/storageService.ts
 import { supabase } from "@/lib/supabase/client";
+import { resizeImageFile } from "@/lib/imageResize";
 
 const BUCKET = "momonga";
 
-function getExt(name: string) {
-  const idx = name.lastIndexOf(".");
+function getExtFromFileOrType(file: File) {
+  // resize에서 jpeg로 바꾸면 type이 image/jpeg로 바뀜 → 확실히 jpg로
+  if (file.type === "image/jpeg") return "jpg";
+  if (file.type === "image/png") return "png";
+  if (file.type === "image/webp") return "webp";
+
+  const idx = file.name.lastIndexOf(".");
   if (idx < 0) return "jpg";
-  return name.slice(idx + 1).toLowerCase();
+  return file.name.slice(idx + 1).toLowerCase();
 }
 
 function randomId(len = 10) {
@@ -20,7 +27,7 @@ function getPublicUrl(path: string) {
   return data.publicUrl;
 }
 
-// ✅ 오버로드: (file, folder) 또는 ({file, folder})
+// ✅ 오버로드: (file, folder) 또는 ({file, folder, upsert})
 export async function uploadToMomongaBucket(
   file: File,
   folder: string
@@ -30,17 +37,29 @@ export async function uploadToMomongaBucket(params: {
   folder: string;
   upsert?: boolean;
 }): Promise<string>;
+
 export async function uploadToMomongaBucket(
   a: File | { file: File; folder: string; upsert?: boolean },
   b?: string
-) {
-  const file = a instanceof File ? a : a.file;
+): Promise<string> {
+  const inputFile = a instanceof File ? a : a.file;
   const folder = a instanceof File ? (b ?? "") : a.folder;
   const upsert = a instanceof File ? true : (a.upsert ?? true);
 
   if (!folder) throw new Error("uploadToMomongaBucket: folder is required");
 
-  const ext = getExt(file.name);
+  // ✅ 업로드 전 리사이즈(이미지일 때만)
+  // - GIF/SVG는 resizeImageFile 내부에서 그대로 반환하도록 해놨으면 OK
+  const file =
+    inputFile.type.startsWith("image/")
+      ? await resizeImageFile(inputFile, {
+          maxSize: 1600,
+          quality: 0.85,
+          mime: "image/jpeg",
+        })
+      : inputFile;
+
+  const ext = getExtFromFileOrType(file);
   const path = `${folder}/${Date.now()}_${randomId()}.${ext}`;
 
   const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
