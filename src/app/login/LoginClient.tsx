@@ -22,11 +22,23 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  // ✅ 쿨다운(초): 성공/에러(특히 rate limit) 시 재전송 연타 방지
+  const [cooldown, setCooldown] = useState(0);
+
   const force = searchParams.get("force");
   const next = useMemo(
     () => safeNextPath(searchParams.get("next")),
     [searchParams]
   );
+
+  // ✅ 쿨다운 타이머 (1초씩 감소)
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setInterval(() => {
+      setCooldown((c) => Math.max(0, c - 1));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [cooldown]);
 
   // ✅ 1) 매직링크가 "#access_token=..." 형태로 오는 경우 처리
   useEffect(() => {
@@ -73,6 +85,8 @@ export default function LoginPage() {
   }, [router, next, force]);
 
   async function sendLink() {
+    if (cooldown > 0) return;
+
     setLoading(true);
     setMsg(null);
 
@@ -82,7 +96,6 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        // ✅ 여기 중요: 되도록 callback으로 보내자
         emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(
           next
         )}`,
@@ -93,11 +106,23 @@ export default function LoginPage() {
 
     if (error) {
       console.error("[login] signInWithOtp error:", error);
+
+      const m = (error.message || "").toLowerCase();
+
+      // ✅ rate limit 안내 + 강제 쿨다운
+      if (m.includes("rate limit")) {
+        setMsg("요청이 많아 잠시 후 다시 시도해줘.");
+        setCooldown(60);
+        return;
+      }
+
       setMsg(error.message);
       return;
     }
 
+    // ✅ 성공해도 연타 방지용 쿨다운
     setSent(true);
+    setCooldown(60);
   }
 
   async function logout() {
@@ -122,10 +147,14 @@ export default function LoginPage() {
 
         <button
           className="w-full rounded-md bg-white/10 p-3 disabled:opacity-50"
-          disabled={loading || !email}
+          disabled={loading || !email || cooldown > 0}
           onClick={sendLink}
         >
-          {loading ? "처리중..." : "로그인 링크 보내기"}
+          {cooldown > 0
+            ? `다시 보내기 (${cooldown}s)`
+            : loading
+            ? "처리중..."
+            : "로그인 링크 보내기"}
         </button>
 
         <div className="flex gap-2">
@@ -138,7 +167,11 @@ export default function LoginPage() {
 
           <button
             className="rounded-md bg-white/10 px-3 py-2"
-            onClick={() => router.replace(`/login?force=1&next=${encodeURIComponent(next)}`)}
+            onClick={() =>
+              router.replace(
+                `/login?force=1&next=${encodeURIComponent(next)}`
+              )
+            }
           >
             강제로 로그인 페이지 보기
           </button>
