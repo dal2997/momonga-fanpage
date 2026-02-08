@@ -101,9 +101,9 @@ export default async function PublicUserPage(props: {
         <Link
           href="/"
           className="
-            text-sm transition
-            text-zinc-500 hover:text-zinc-800
-            dark:text-white/50 dark:hover:text-white/80
+            inline-flex items-center rounded-full border px-3 py-1.5 text-sm transition
+            border-black/10 text-zinc-600 hover:bg-black/5 hover:text-zinc-900
+            dark:border-white/10 dark:text-white/60 dark:hover:bg-white/5 dark:hover:text-white
           "
         >
           홈으로
