@@ -25,10 +25,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        {/* 배경만 유지 */}
+        {/* ✅ 배경 레이어는 딱 1번만 */}
         <div className="spotlight" />
         <div className="noise" />
 
+        {/* ✅ children도 딱 1번만 */}
         {children}
       </body>
     </html>

@@ -18,13 +18,11 @@ export default function GlassCard({
     const x = (e.clientX - rect.left) / rect.width; // 0~1
     const y = (e.clientY - rect.top) / rect.height; // 0~1
 
-    // 퍼포먼스: mousemove마다 setProperty를 바로 하지 말고 RAF로 묶기
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
       el.style.setProperty("--mx", `${(x * 100).toFixed(2)}%`);
       el.style.setProperty("--my", `${(y * 100).toFixed(2)}%`);
 
-      // 살짝 기울어지는 느낌(과하면 촌스러워서 아주 약하게)
       const tiltX = (y - 0.5) * -6; // -3~3 정도
       const tiltY = (x - 0.5) * 8;  // -4~4 정도
       el.style.setProperty("--rx", `${tiltX.toFixed(2)}deg`);
@@ -44,7 +42,6 @@ export default function GlassCard({
     <div
       onMouseMove={onMove}
       onMouseLeave={onLeave}
-      // 기본값(마우스 없을 때)
       style={
         {
           ["--mx" as any]: "50%",
@@ -55,37 +52,60 @@ export default function GlassCard({
       }
       className={[
         "group relative overflow-hidden rounded-[28px]",
-        // ✅ 진짜 ‘유리’ 베이스
-        "bg-white/[0.055] dark:bg-white/[0.07]",
+        // ✅ 라이트/다크 베이스를 '완전히' 분리 (라이트에서 흰유리 쓰면 글씨/경계가 죽음)
+        "bg-black/[0.035] dark:bg-white/[0.07]",
         "backdrop-blur-2xl backdrop-saturate-150",
 
-        // ✅ 가벼운 3D 반응 (애플 느낌: scale보다 빛/각도)
-        "transition-[transform,box-shadow,background-color] duration-300",
-        "hover:shadow-[0_28px_110px_rgba(0,0,0,0.65)] dark:hover:shadow-[0_32px_140px_rgba(0,0,0,0.78)]",
+        // ✅ 아주 약한 3D 반응 (빛/각도로만)
+        "transition-[transform,box-shadow,background-color,border-color] duration-300",
         "[transform:perspective(900px)_rotateX(var(--rx))_rotateY(var(--ry))]",
         "will-change-transform",
 
-        // ✅ 유리 림(두께감)
+        // ✅ 테두리(라이트는 블랙 기반, 다크는 화이트 기반)
         "border border-black/10 dark:border-white/10",
-        "ring-1 ring-inset ring-white/10 dark:ring-white/12",
+        "ring-1 ring-inset ring-black/5 dark:ring-white/12",
+
+        // ✅ hover shadow (라이트는 덜 어둡게)
+        "hover:shadow-[0_22px_90px_rgba(0,0,0,0.18)] dark:hover:shadow-[0_32px_140px_rgba(0,0,0,0.78)]",
 
         className,
       ].join(" ")}
     >
-      {/* ✅ 마우스 위치를 따라다니는 글로우 (핵심) */}
+      {/* ✅ 마우스 글로우: 라이트/다크를 분리해서 그린다 */}
+      {/* LIGHT glow */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100 dark:hidden"
+        style={{
+          background:
+            "radial-gradient(420px 320px at var(--mx) var(--my), rgba(255,255,255,0.55), transparent 60%)",
+        }}
+      />
+      {/* DARK glow */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100 hidden dark:block"
         style={{
           background:
             "radial-gradient(420px 320px at var(--mx) var(--my), rgba(255,255,255,0.26), transparent 60%)",
         }}
       />
 
-      {/* ✅ 좀 더 작은 ‘핫스팟’ (유리 하이라이트) */}
+      {/* ✅ 작은 핫스팟도 라이트/다크 분리 */}
+      {/* LIGHT hotspot */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100 dark:hidden"
+        style={{
+          background:
+            "radial-gradient(220px 160px at var(--mx) var(--my), rgba(255,255,255,0.35), transparent 55%)",
+          mixBlendMode: "screen",
+        }}
+      />
+      {/* DARK hotspot */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100 hidden dark:block"
         style={{
           background:
             "radial-gradient(220px 160px at var(--mx) var(--my), rgba(255,255,255,0.18), transparent 55%)",
@@ -93,20 +113,38 @@ export default function GlassCard({
         }}
       />
 
-      {/* ✅ 상단 림 스펙큘러(고정) */}
+      {/* ✅ 상단 림 스펙큘러(고정): 라이트/다크 톤 다르게 */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-90"
+        className="pointer-events-none absolute inset-0 opacity-90 dark:opacity-90"
         style={{
           background:
             "linear-gradient(180deg, rgba(255,255,255,0.22), transparent 38%)",
         }}
       />
-
-      {/* ✅ 미세한 내부 쉐도우로 가장자리 깊이 */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0"
+        className="pointer-events-none absolute inset-0 dark:hidden"
+        style={{
+          background:
+            "linear-gradient(180deg, rgba(255,255,255,0.35), transparent 42%)",
+        }}
+      />
+
+      {/* ✅ 내부 쉐도우: 라이트는 과한 검정 먹이면 탁해짐 -> 약하게 */}
+      {/* LIGHT inner shadow */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 dark:hidden"
+        style={{
+          boxShadow:
+            "inset 0 1px 0 rgba(255,255,255,0.14), inset 0 -24px 50px rgba(0,0,0,0.10)",
+        }}
+      />
+      {/* DARK inner shadow */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 hidden dark:block"
         style={{
           boxShadow:
             "inset 0 1px 0 rgba(255,255,255,0.10), inset 0 -30px 60px rgba(0,0,0,0.18)",

@@ -67,14 +67,10 @@ export default function Hero() {
               </GlassIcon>
             </div>
 
-            <p className="mt-6 text-zinc-700 dark:text-white/80">
-              팬이 팬심으로 만든 공간 ✨
-            </p>
+            <p className="mt-6 text-zinc-700 dark:text-white/80">팬이 팬심으로 만든 공간 ✨</p>
 
             <div className="mt-8 rounded-2xl border border-black/10 bg-black/5 p-6 dark:border-white/10 dark:bg-white/5">
-              <p className="text-sm text-zinc-600 dark:text-white/70">
-                오늘의 한 줄
-              </p>
+              <p className="text-sm text-zinc-600 dark:text-white/70">오늘의 한 줄</p>
               <p className="mt-2 text-lg text-zinc-900 dark:text-zinc-100">
                 {mounted ? quote : "…"}
               </p>
@@ -88,8 +84,14 @@ export default function Hero() {
 
           {/* 오른쪽: 비주얼 */}
           <div className="relative">
-            {/* glow 배경 */}
-            <div className="pointer-events-none absolute inset-0 -z-10 blur-2xl opacity-60 [background:radial-gradient(260px_260px_at_52%_45%,rgba(255,255,255,0.18),transparent_60%)]" />
+            {/* glow 배경 (라이트/다크 분리) */}
+            <div
+              className="
+                pointer-events-none absolute inset-0 -z-10 blur-2xl opacity-60
+                [background:radial-gradient(260px_260px_at_52%_45%,rgba(0,0,0,0.06),transparent_60%)]
+                dark:[background:radial-gradient(260px_260px_at_52%_45%,rgba(255,255,255,0.18),transparent_60%)]
+              "
+            />
 
             <div
               ref={ref}
@@ -102,11 +104,17 @@ export default function Hero() {
               <button
                 type="button"
                 onClick={triggerPop}
-                className="group relative h-full w-full cursor-pointer select-none"
+                className="group relative h-full w-full select-none"
                 aria-label="momonga"
               >
-                {/* hover시 글로우 강화 */}
-                <div className="pointer-events-none absolute inset-0 rounded-full opacity-0 blur-2xl transition-opacity duration-200 group-hover:opacity-100 [background:radial-gradient(180px_180px_at_50%_55%,rgba(255,255,255,0.22),transparent_65%)]" />
+                {/* hover시 글로우 강화 (라이트/다크 분리) */}
+                <div
+                  className="
+                    pointer-events-none absolute inset-0 rounded-full opacity-0 blur-2xl transition-opacity duration-200 group-hover:opacity-100
+                    [background:radial-gradient(180px_180px_at_50%_55%,rgba(0,0,0,0.08),transparent_65%)]
+                    dark:[background:radial-gradient(180px_180px_at_50%_55%,rgba(255,255,255,0.22),transparent_65%)]
+                  "
+                />
 
                 <div className="absolute inset-0 grid place-items-center">
                   <img

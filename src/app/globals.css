@@ -7,15 +7,28 @@
   --background: #ffffff;
   --foreground: #171717;
 
+  /* ✅ 라이트용 표면/텍스트 토큰 (컴포넌트가 white 박아도 최소 방어 가능) */
+  --surface: rgba(0, 0, 0, 0.04);
+  --surface-border: rgba(0, 0, 0, 0.10);
+  --surface-text: rgba(23, 23, 23, 0.88);
+
   /* 마우스 글로우 포지션 (JS가 갱신) */
   --mx: 50vw;
   --my: 40vh;
+
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+
+    --surface: rgba(255, 255, 255, 0.05);
+    --surface-border: rgba(255, 255, 255, 0.10);
+    --surface-text: rgba(255, 255, 255, 0.82);
+
+    color-scheme: dark;
   }
 }
 
@@ -36,6 +49,7 @@ body {
   background: var(--background);
   color: var(--foreground);
 
+  /* ✅ 아주 약한 그라데이션 */
   background-image:
     radial-gradient(1200px 800px at 20% 10%, rgba(255,255,255,0.05), transparent 60%),
     radial-gradient(900px 700px at 80% 20%, rgba(255,255,255,0.035), transparent 60%),
@@ -69,7 +83,7 @@ body {
   opacity: 0.9;
 }
 
-/* ✅ 마우스 주변 “빛 번짐” (원하면 유지, 싫으면 이 블록 통째로 삭제) */
+/* ✅ 마우스 주변 “빛 번짐” */
 body::after {
   content: "";
   position: fixed;
@@ -87,49 +101,33 @@ body::after {
 }
 
 /* =========================
-   Existing animations (유지)
+   Existing animations
 ========================= */
 @keyframes floaty {
   0% { transform: translateY(0px); }
   50% { transform: translateY(-10px); }
   100% { transform: translateY(0px); }
 }
-
-.floaty {
-  animation: floaty 4s ease-in-out infinite;
-}
+.floaty { animation: floaty 4s ease-in-out infinite; }
 
 @keyframes momonga-float {
   0%   { transform: translate3d(0, 0, 0) rotate(-0.8deg); }
   50%  { transform: translate3d(0, -10px, 0) rotate(0.8deg); }
   100% { transform: translate3d(0, 0, 0) rotate(-0.8deg); }
 }
-
 @keyframes momonga-breathe {
   0%   { transform: scale(1); }
   50%  { transform: scale(1.02); }
   100% { transform: scale(1); }
 }
-
 @keyframes momonga-pop {
   0%   { transform: scale(1); }
   35%  { transform: scale(1.06); }
   100% { transform: scale(1); }
 }
-
-.momonga-idle {
-  animation: momonga-float 5.2s ease-in-out infinite;
-  will-change: transform;
-}
-
-.momonga-breathe {
-  animation: momonga-breathe 3.2s ease-in-out infinite;
-  will-change: transform;
-}
-
-.momonga-pop {
-  animation: momonga-pop 420ms cubic-bezier(0.2, 0.9, 0.2, 1) 1;
-}
+.momonga-idle { animation: momonga-float 5.2s ease-in-out infinite; will-change: transform; }
+.momonga-breathe { animation: momonga-breathe 3.2s ease-in-out infinite; will-change: transform; }
+.momonga-pop { animation: momonga-pop 420ms cubic-bezier(0.2, 0.9, 0.2, 1) 1; }
 
 @keyframes momonga-blink {
   0% { transform: scaleY(1); }
@@ -138,21 +136,16 @@ body::after {
   55% { transform: scaleY(1); }
   100% { transform: scaleY(1); }
 }
-
-.momonga-blink {
-  animation: momonga-blink 6.5s infinite;
-  transform-origin: center 60%;
-}
+.momonga-blink { animation: momonga-blink 6.5s infinite; transform-origin: center 60%; }
 
 @keyframes modalPop {
   from { transform: translateY(6px) scale(.985); opacity: 0; }
   to   { transform: translateY(0) scale(1); opacity: 1; }
 }
 
-/* ===== Glass badge shine sweep ===== */
 @keyframes glassShineSweep {
   0%   { transform: translateX(-120%); opacity: 0; }
-  10%  { opacity: .0; }
+  10%  { opacity: 0; }
   30%  { opacity: .35; }
   60%  { opacity: .25; }
   100% { transform: translateX(120%); opacity: 0; }
