@@ -85,16 +85,27 @@ export default async function PublicUserPage(props: {
 
   return (
     <section className="mx-auto max-w-6xl px-4 py-10">
-      {/* ✅ 선택사항(상단 돌아가기 버튼) : section 맨 위에 붙이면 끝 */}
+      {/* 상단 돌아가기 */}
       <div className="mb-5 flex items-center justify-between">
         <Link
           href="/?tab=collection"
-          className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+          className="
+            inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition
+            border-black/10 bg-black/5 text-zinc-700 hover:bg-black/10
+            dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10
+          "
         >
           ← 홈(수집탭)
         </Link>
 
-        <Link href="/" className="text-sm text-white/50 hover:text-white/80">
+        <Link
+          href="/"
+          className="
+            text-sm transition
+            text-zinc-500 hover:text-zinc-800
+            dark:text-white/50 dark:hover:text-white/80
+          "
+        >
           홈으로
         </Link>
       </div>
@@ -102,7 +113,13 @@ export default async function PublicUserPage(props: {
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4">
-          <div className="h-12 w-12 overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+          <div
+            className="
+              h-12 w-12 overflow-hidden rounded-2xl border
+              border-black/10 bg-black/5
+              dark:border-white/10 dark:bg-white/5
+            "
+          >
             {profile.avatar_url ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -111,51 +128,62 @@ export default async function PublicUserPage(props: {
                 className="h-full w-full object-cover"
               />
             ) : (
-              <div className="grid h-full w-full place-items-center text-sm text-white/50">
+              <div className="grid h-full w-full place-items-center text-sm text-zinc-500 dark:text-white/50">
                 🙂
               </div>
             )}
           </div>
 
           <div>
-            <h1 className="text-2xl font-semibold">
+            <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
               {profile.display_name ?? profile.handle}
             </h1>
-            <p className="text-sm text-white/60">
-              @{profile.handle} · 수집중 {collectingCount} · 수집완료{" "}
-              {collectedCount}
+            <p className="text-sm text-zinc-600 dark:text-white/60">
+              @{profile.handle} · 수집중 {collectingCount} · 수집완료 {collectedCount}
             </p>
           </div>
         </div>
 
+        {/* Tabs + Owner Button */}
         <div className="flex flex-wrap gap-2">
-          {(["all", "collecting", "collected"] as ViewTab[]).map((t) => (
-            <Link
-              key={t}
-              href={`/u/${encodeURIComponent(profile.handle)}?tab=${t}`}
-              className={`rounded-full border px-4 py-2 text-sm ${
-                tab === t
-                  ? "border-white/20 bg-white/15"
-                  : "border-white/10 bg-white/5 hover:bg-white/10"
-              }`}
-            >
-              {t === "all" ? "전체" : t === "collecting" ? "수집중" : "수집완료"}
-            </Link>
-          ))}
+          {(["all", "collecting", "collected"] as ViewTab[]).map((t) => {
+            const active = tab === t;
+            return (
+              <Link
+                key={t}
+                href={`/u/${encodeURIComponent(profile.handle)}?tab=${t}`}
+                className={[
+                  "rounded-full border px-4 py-2 text-sm font-medium transition",
+                  // 기본(라이트)
+                  active
+                    ? "border-black/20 bg-black/10 text-zinc-900"
+                    : "border-black/10 bg-black/5 text-zinc-700 hover:bg-black/10 hover:border-black/20",
+                  // 다크
+                  active
+                    ? "dark:border-white/20 dark:bg-white/10 dark:text-white"
+                    : "dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10 dark:hover:border-white/20",
+                ].join(" ")}
+              >
+                {t === "all" ? "전체" : t === "collecting" ? "수집중" : "수집완료"}
+              </Link>
+            );
+          })}
 
-          {/* ✅ 본인일 때만 보이는 버튼(컴포넌트 내부에서 판별) */}
           <OwnerManageButton ownerId={profile.id} />
         </div>
       </div>
 
-      {/* Grid + Modal (client) */}
+      {/* Grid + Modal */}
       <div className="mt-8">
         <PublicCollectionGrid items={filtered} />
       </div>
 
       {filtered.length === 0 && (
-        <div className="mt-10 text-white/60">아직 공개된 카드가 없어.</div>
+        <div className="mt-10 text-zinc-600 dark:text-white/60">
+          아직 공개된 카드가 없어.
+        </div>
       )}
     </section>
   );
+
 }
