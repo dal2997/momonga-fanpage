@@ -81,7 +81,8 @@ export default async function PublicUserPage(props: {
   const collectedCount = all.filter((r) => r.status === "collected").length;
 
   /* ===== 금액 합계 ===== */
-  const sum = (xs: CollectionRow[]) => xs.reduce((acc, r) => acc + (r.original_price ?? 0), 0);
+  const sum = (xs: CollectionRow[]) =>
+    xs.reduce((acc, r) => acc + (r.original_price ?? 0), 0);
 
   const collectedTotal = sum(all.filter((r) => r.status === "collected"));
   const collectingTotal = sum(all.filter((r) => r.status === "collecting"));
@@ -123,27 +124,34 @@ export default async function PublicUserPage(props: {
     p.cumTotal = runTotal;
   }
 
+  // ✅ 공통 pill 스타일(라이트/다크 모두)
+  const pillBase =
+    "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition";
+
+  const pillLight =
+    "border-black/10 bg-black/5 text-zinc-800 hover:bg-black/10 hover:border-black/15";
+
+  const pillDark =
+    "dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10 dark:hover:border-white/20 dark:hover:text-white";
+
+  const pill = `${pillBase} ${pillLight} ${pillDark}`;
+
   return (
     <main className="relative">
       <section className="mx-auto max-w-6xl px-5 pt-24 pb-24">
         {/* 상단 돌아가기 */}
         <div className="mb-5 flex items-center justify-between">
-          <Link
-            href="/?tab=collection"
-            className="
-              inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition
-              border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:border-white/20
-            "
-          >
+          <Link href="/?tab=collection" className={pill}>
             ← 홈(수집탭)
           </Link>
 
           <Link
             href="/"
-            className="
-              inline-flex items-center rounded-full border px-3 py-1.5 text-sm transition
-              border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white hover:border-white/20
-            "
+            className={[
+              "inline-flex items-center rounded-full border px-3 py-1.5 text-sm transition",
+              "border-black/10 bg-black/5 text-zinc-700 hover:bg-black/10 hover:text-zinc-900",
+              "dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white",
+            ].join(" ")}
           >
             홈으로
           </Link>
@@ -161,10 +169,11 @@ export default async function PublicUserPage(props: {
         <div className="mt-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-4">
             <div
-              className="
-                h-12 w-12 overflow-hidden rounded-2xl border
-                border-white/10 bg-white/5
-              "
+              className={[
+                "h-12 w-12 overflow-hidden rounded-2xl border",
+                "border-black/10 bg-black/5",
+                "dark:border-white/10 dark:bg-white/5",
+              ].join(" ")}
             >
               {profile.avatar_url ? (
                 <img
@@ -173,15 +182,17 @@ export default async function PublicUserPage(props: {
                   className="h-full w-full object-cover"
                 />
               ) : (
-                <div className="grid h-full w-full place-items-center text-sm text-white/50">🙂</div>
+                <div className="grid h-full w-full place-items-center text-sm text-zinc-500 dark:text-white/50">
+                  🙂
+                </div>
               )}
             </div>
 
             <div>
-              <h1 className="text-2xl font-semibold text-white">
+              <h1 className="text-2xl font-semibold text-zinc-900 dark:text-white">
                 {profile.display_name ?? profile.handle}
               </h1>
-              <p className="text-sm text-white/60">
+              <p className="text-sm text-zinc-600 dark:text-white/60">
                 @{profile.handle} · 수집중 {collectingCount} · 수집완료 {collectedCount}
               </p>
             </div>
@@ -191,31 +202,45 @@ export default async function PublicUserPage(props: {
           <div className="flex flex-wrap gap-2">
             {(["all", "collecting", "collected"] as ViewTab[]).map((t) => {
               const active = tab === t;
+
+              const tabBase =
+                "group relative overflow-hidden rounded-full px-4 py-2 text-sm font-medium transition border";
+
+              const tabLightActive =
+                "border-black/20 bg-black/10 text-zinc-900";
+              const tabLightInactive =
+                "border-black/10 bg-black/5 text-zinc-700 hover:bg-black/10 hover:border-black/20 hover:text-zinc-900";
+
+              const tabDarkActive =
+                "dark:border-white/20 dark:bg-white/10 dark:text-white";
+              const tabDarkInactive =
+                "dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10 dark:hover:border-white/20 dark:hover:text-white";
+
               return (
                 <Link
                   key={t}
                   href={`/u/${encodeURIComponent(profile.handle)}?tab=${t}`}
                   className={[
-                    "group relative overflow-hidden rounded-full px-4 py-2 text-sm font-medium transition",
-                    "border shadow-[0_12px_40px_rgba(0,0,0,0.25)]",
-                    active
-                      ? "border-white/20 bg-white/[0.10] text-white"
-                      : "border-white/10 bg-white/[0.06] text-white/80 hover:bg-white/[0.10] hover:border-white/20 hover:text-white",
+                    tabBase,
+                    active ? tabLightActive : tabLightInactive,
+                    active ? tabDarkActive : tabDarkInactive,
+                    "shadow-[0_12px_40px_rgba(0,0,0,0.18)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.25)]",
                   ].join(" ")}
                 >
+                  {/* hover highlight */}
                   <span
                     aria-hidden
                     className="
                       pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300
                       group-hover:opacity-100
                       bg-[radial-gradient(900px_220px_at_20%_-10%,rgba(255,255,255,0.18),transparent_55%)]
+                      dark:bg-[radial-gradient(900px_220px_at_20%_-10%,rgba(255,255,255,0.18),transparent_55%)]
                     "
                   />
                   <span className="relative">
                     {t === "all" ? "전체" : t === "collecting" ? "수집중" : "수집완료"}
                   </span>
                 </Link>
-
               );
             })}
 
@@ -229,7 +254,9 @@ export default async function PublicUserPage(props: {
         </div>
 
         {filtered.length === 0 && (
-          <div className="mt-10 text-white/60">아직 공개된 카드가 없어.</div>
+          <div className="mt-10 text-zinc-600 dark:text-white/60">
+            아직 공개된 카드가 없어.
+          </div>
         )}
       </section>
     </main>
