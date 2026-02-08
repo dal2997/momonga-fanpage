@@ -15,19 +15,16 @@ function getMainImage(item: CollectionRow) {
   return item.image ?? null;
 }
 
-// ✅ 모달 내부 클릭이 배경(onMouseDown)으로 전파되지 않게만 막는다
 function stopPropagationOnly(e: React.MouseEvent) {
   e.stopPropagation();
 }
 
-// ✅ 모달 카드 영역에서 마우스다운이 배경으로 전파되지 않게 막는다
 function stopMouseDown(e: React.MouseEvent) {
   e.stopPropagation();
 }
 
 export default function PublicCollectionGrid({ items }: { items: CollectionRow[] }) {
   const [openId, setOpenId] = useState<string | null>(null);
-
   const selected = useMemo(() => items.find((x) => x.id === openId) ?? null, [items, openId]);
 
   // ESC 닫기 + body scroll lock
@@ -53,24 +50,27 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
     "focus:outline-none focus-visible:ring-2 focus-visible:ring-black/20 focus-visible:ring-offset-0 " +
     "dark:focus-visible:ring-white/20";
 
-  const modalPill =
+  const pill =
     "rounded-full border px-3 py-1.5 text-sm transition " +
-    "border-black/10 bg-black/[0.04] text-zinc-800 hover:bg-black/[0.06] " +
-    "dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10";
+    "border-black/10 bg-black/[0.04] text-zinc-800 hover:bg-black/[0.06] hover:border-black/15 " +
+    "dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10 dark:hover:border-white/20";
 
-  const modalBadge =
+  const badge =
     "relative inline-flex items-center overflow-hidden rounded-full px-2.5 py-1 text-xs font-medium " +
     "border border-black/10 bg-black/[0.04] text-zinc-700 " +
     "dark:border-white/10 dark:bg-white/[0.06] dark:text-white/80 " +
-    "backdrop-blur-xl backdrop-saturate-150 shadow-[0_10px_28px_rgba(0,0,0,0.18)]";
+    "backdrop-blur-xl backdrop-saturate-150 shadow-[0_10px_28px_rgba(0,0,0,0.14)] dark:shadow-[0_10px_28px_rgba(0,0,0,0.30)]";
 
-  const modalTextTitle = "text-zinc-900 dark:text-white";
-  const modalTextSub = "text-zinc-600 dark:text-white/60";
-  const modalTextBody = "text-zinc-700 dark:text-white/70";
-
-  const modalPanel =
-    "border border-black/10 bg-black/[0.02] " +
+  const panel =
+    "overflow-hidden rounded-2xl border " +
+    "border-black/10 bg-white/60 " +
     "dark:border-white/10 dark:bg-white/5";
+
+  const panelHeader = "border-b px-4 py-3 text-sm border-black/10 text-zinc-600 dark:border-white/10 dark:text-white/60";
+
+  const textTitle = "text-zinc-900 dark:text-white";
+  const textSub = "text-zinc-600 dark:text-white/60";
+  const textBody = "text-zinc-700 dark:text-white/70";
 
   return (
     <>
@@ -94,7 +94,7 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
                 className={[
                   "overflow-hidden p-0",
                   "transition-all duration-200 ease-out",
-                  "group-hover:shadow-[0_28px_110px_rgba(0,0,0,0.60)]",
+                  "group-hover:shadow-[0_28px_110px_rgba(0,0,0,0.55)] dark:group-hover:shadow-[0_28px_110px_rgba(0,0,0,0.60)]",
                 ].join(" ")}
               >
                 <div className="relative h-[220px] w-full overflow-hidden rounded-2xl">
@@ -107,13 +107,12 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
                       loading="lazy"
                     />
                   ) : (
-                    // ✅ 라이트/다크 모두 보이게
                     <div className="grid h-full place-items-center text-sm text-zinc-600 dark:text-white/50">
                       이미지 없음
                     </div>
                   )}
 
-                  {/* ✅ 썸네일 영역은 '이미지 위'라서 흰 텍스트 유지해도 OK */}
+                  {/* ✅ 썸네일은 이미지 위라서 흰 텍스트 OK */}
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-black/0" />
 
                   <div
@@ -124,21 +123,13 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
                     "
                   />
 
-                  <div
-                    className="
-                      pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300
-                      group-hover:opacity-100
-                      [background:radial-gradient(260px_260px_at_52%_45%,rgba(255,255,255,0.12),transparent_60%)]
-                    "
-                  />
-
                   <div className="absolute bottom-0 left-0 right-0 p-4">
-                    <div className="flex flex-wrap items-center gap-2 text-sm text-white/80">
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-white/85">
                       <span
                         className={[
                           "group/badge relative inline-flex items-center overflow-hidden rounded-full px-2.5 py-1 text-xs font-medium",
                           "border border-white/10 bg-white/[0.06] backdrop-blur-xl backdrop-saturate-150",
-                          "shadow-[0_10px_28px_rgba(0,0,0,0.30)]",
+                          "shadow-[0_10px_28px_rgba(0,0,0,0.28)]",
                           "transition-transform duration-200 ease-out",
                           "group-hover:-translate-y-[1px]",
                         ].join(" ")}
@@ -168,12 +159,12 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
                             group-hover:animate-[glassShineSweep_.8s_ease-out_1]
                           "
                         />
-                        <span className="relative text-white/85">
+                        <span className="relative text-white/90">
                           {item.status === "collecting" ? "수집중" : "수집완료"}
                         </span>
                       </span>
 
-                      <span className="text-white/70">
+                      <span className="text-white/75">
                         · 원가 {formatPrice(item.original_price)}
                         {item.used_price != null ? (
                           <span className="text-white/55"> / 중고 {formatPrice(item.used_price)}</span>
@@ -206,19 +197,20 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
           aria-modal="true"
           onMouseDown={() => setOpenId(null)}
         >
-          {/* 배경 */}
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+          {/* ✅ 라이트: 너무 어둡지 않게 / 다크: 기존처럼 깊게 */}
+          <div className="absolute inset-0 bg-white/40 backdrop-blur-sm dark:bg-black/70" />
 
           <div
             className="relative w-full max-w-3xl animate-[modalPop_.16s_ease-out_1]"
             onMouseDown={stopMouseDown}
           >
+            {/* ✅ 모달 카드 외곽도 라이트에서 너무 먹지 않게 */}
             <GlassCard className="overflow-hidden p-0">
               {/* header */}
               <div className="flex items-center justify-between border-b border-black/10 px-5 py-4 dark:border-white/10">
                 <div>
                   <div className="inline-flex">
-                    <span className={modalBadge}>
+                    <span className={badge}>
                       <span
                         aria-hidden
                         className="
@@ -249,52 +241,38 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
                     </span>
                   </div>
 
-                  <div className={`mt-0.5 text-lg font-semibold ${modalTextTitle}`}>
+                  <div className={`mt-0.5 text-lg font-semibold ${textTitle}`}>
                     {selected.title ?? "제목 없음"}
                   </div>
                 </div>
 
-                <button type="button" onClick={() => setOpenId(null)} className={modalPill}>
+                <button type="button" onClick={() => setOpenId(null)} className={pill}>
                   닫기 ✕
                 </button>
               </div>
 
               {/* images */}
               <div className="grid gap-3 p-5 md:grid-cols-2">
-                {/* left: 상품 이미지 */}
-                <div className={`overflow-hidden rounded-2xl ${modalPanel}`}>
-                  <div className={`border-b border-black/10 px-4 py-3 text-sm ${modalTextSub} dark:border-white/10`}>
-                    상품 이미지
-                  </div>
+                <div className={panel}>
+                  <div className={panelHeader}>상품 이미지</div>
                   <div className="relative aspect-[4/3]">
                     {selected.image ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={selected.image}
-                        alt="product"
-                        className="absolute inset-0 h-full w-full object-cover"
-                      />
+                      <img src={selected.image} alt="product" className="absolute inset-0 h-full w-full object-cover" />
                     ) : (
-                      <div className={`grid h-full w-full place-items-center ${modalTextSub}`}>없음</div>
+                      <div className={`grid h-full w-full place-items-center ${textSub}`}>없음</div>
                     )}
                   </div>
                 </div>
 
-                {/* right: 내 사진 */}
-                <div className={`overflow-hidden rounded-2xl ${modalPanel}`}>
-                  <div className={`border-b border-black/10 px-4 py-3 text-sm ${modalTextSub} dark:border-white/10`}>
-                    내 사진
-                  </div>
+                <div className={panel}>
+                  <div className={panelHeader}>내 사진</div>
                   <div className="relative aspect-[4/3]">
                     {selected.my_image ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={selected.my_image}
-                        alt="my"
-                        className="absolute inset-0 h-full w-full object-cover"
-                      />
+                      <img src={selected.my_image} alt="my" className="absolute inset-0 h-full w-full object-cover" />
                     ) : (
-                      <div className={`grid h-full w-full place-items-center ${modalTextSub}`}>없음</div>
+                      <div className={`grid h-full w-full place-items-center ${textSub}`}>없음</div>
                     )}
                   </div>
                 </div>
@@ -302,7 +280,7 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
 
               {/* details */}
               <div className="border-t border-black/10 px-5 py-4 dark:border-white/10">
-                <div className={`flex flex-wrap gap-2 text-sm ${modalTextBody}`}>
+                <div className={`flex flex-wrap gap-2 text-sm ${textBody}`}>
                   <span className="rounded-full border border-black/10 bg-black/[0.04] px-3 py-1 dark:border-white/10 dark:bg-white/5">
                     원가 {formatPrice(selected.original_price)}
                   </span>
@@ -315,7 +293,7 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
                 </div>
 
                 {selected.my_memo ? (
-                  <div className="mt-3 whitespace-pre-wrap rounded-2xl border border-black/10 bg-black/[0.03] p-4 text-sm text-zinc-800 dark:border-white/10 dark:bg-white/5 dark:text-white/75">
+                  <div className="mt-3 whitespace-pre-wrap rounded-2xl border border-black/10 bg-white/60 p-4 text-sm text-zinc-800 dark:border-white/10 dark:bg-white/5 dark:text-white/75">
                     {selected.my_memo}
                   </div>
                 ) : null}
@@ -327,7 +305,7 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={stopPropagationOnly}
-                      className={modalPill}
+                      className={pill}
                     >
                       🔗 구매/정보 링크 열기
                     </a>
