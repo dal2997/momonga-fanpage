@@ -35,7 +35,7 @@ export default function Hero() {
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height / 2;
 
-      const dx = (e.clientX - cx) / rect.width;  // -0.5 ~ 0.5
+      const dx = (e.clientX - cx) / rect.width; // -0.5 ~ 0.5
       const dy = (e.clientY - cy) / rect.height; // -0.5 ~ 0.5
 
       const clamp = (v: number) => Math.max(-0.5, Math.min(0.5, v));
@@ -57,7 +57,9 @@ export default function Hero() {
         <div className="grid items-center gap-10 md:grid-cols-[1.2fr_0.8fr]">
           {/* 왼쪽: 텍스트 */}
           <div>
-            <h1 className="text-4xl font-semibold">모몽가 팬페이지</h1>
+            <h1 className="text-4xl font-semibold text-zinc-900 dark:text-zinc-100">
+              모몽가 팬페이지
+            </h1>
 
             <div className="mt-5 flex gap-4">
               <GlassIcon label="팬메이드">
@@ -65,15 +67,21 @@ export default function Hero() {
               </GlassIcon>
             </div>
 
-            <p className="mt-6 text-white/80">팬이 팬심으로 만든 공간 ✨</p>
+            <p className="mt-6 text-zinc-700 dark:text-white/80">
+              팬이 팬심으로 만든 공간 ✨
+            </p>
 
-            <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-6">
-              <p className="text-sm opacity-70">오늘의 한 줄</p>
-              <p className="mt-2 text-lg">{mounted ? quote : "…"}</p>
+            <div className="mt-8 rounded-2xl border border-black/10 bg-black/5 p-6 dark:border-white/10 dark:bg-white/5">
+              <p className="text-sm text-zinc-600 dark:text-white/70">
+                오늘의 한 줄
+              </p>
+              <p className="mt-2 text-lg text-zinc-900 dark:text-zinc-100">
+                {mounted ? quote : "…"}
+              </p>
             </div>
 
             {/* scroll hint */}
-            <p className="mt-8 text-sm text-white/50">
+            <p className="mt-8 text-sm text-zinc-500 dark:text-white/50">
               ↓ 아래로 내려서 팬들이 좋아하는 순간 보기
             </p>
           </div>
