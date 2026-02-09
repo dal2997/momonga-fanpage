@@ -38,59 +38,76 @@ export default function Profile() {
     setBubble(c.bubble);
   };
 
+  // ✅ 라이트/다크 토큰
+  const heading = "text-zinc-900 dark:text-white";
+  const sub = "text-zinc-600 dark:text-white/60";
+  const faint = "text-zinc-500 dark:text-white/50";
+  const body = "text-zinc-700 dark:text-white/70";
+
+  const panel =
+    "rounded-2xl border p-6 " +
+    "border-black/10 bg-black/[0.04] " +
+    "dark:border-white/10 dark:bg-white/5";
+
+  const bubbleBox =
+    "rounded-2xl border px-5 py-4 " +
+    "border-black/10 bg-white/60 text-zinc-800 " +
+    "dark:border-white/10 dark:bg-white/5 dark:text-white/80";
+
+  const bubbleNub =
+    "absolute -left-2 top-6 h-4 w-4 rotate-45 border-l border-b " +
+    "border-black/10 bg-white/60 " +
+    "dark:border-white/10 dark:bg-white/5";
+
+  const chipBase =
+    "rounded-full border px-3 py-1 text-sm transition " +
+    "border-black/10 bg-black/[0.04] text-zinc-700 hover:bg-black/[0.08] hover:text-zinc-900 " +
+    "dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white/85";
+
+  const chipActive =
+    "border-black/20 bg-black/[0.08] text-zinc-900 " +
+    "dark:border-white/25 dark:bg-white/15 dark:text-white";
+
   return (
     <section id="profile" className="scroll-mt-24">
       <GlassCard className="p-10">
         <div className="flex items-start justify-between gap-6">
           <div>
-            <h2 className="text-2xl font-semibold">모몽가 프로필</h2>
-            <p className="mt-2 text-white/60">
-              클릭해서 모몽가의 반응을 확인해봐
-            </p>
+            <h2 className={`text-2xl font-semibold ${heading}`}>모몽가 프로필</h2>
+            <p className={`mt-2 ${sub}`}>클릭해서 모몽가의 반응을 확인해봐</p>
           </div>
 
           {/* 말풍선 */}
           <div className="relative max-w-sm">
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-white/80">
-              {bubble}
-            </div>
-            <div className="absolute -left-2 top-6 h-4 w-4 rotate-45 border-l border-b border-white/10 bg-white/5" />
+            <div className={bubbleBox}>{bubble}</div>
+            <div className={bubbleNub} />
           </div>
         </div>
 
         <div className="mt-8 grid gap-6 md:grid-cols-2">
           {/* 매력 포인트 / 특기 */}
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-            <p className="text-xs text-white/50">매력 포인트</p>
-            <p className="mt-2 text-lg font-semibold">작고 빠르고 귀여움</p>
-            <p className="mt-2 text-sm text-white/60">
-              과한 연출 없이도 표정과 리듬으로 분위기를 바꾼다.
-            </p>
+          <div className={panel}>
+            <p className={`text-xs ${faint}`}>매력 포인트</p>
+            <p className={`mt-2 text-lg font-semibold ${heading}`}>작고 빠르고 귀여움</p>
+            <p className={`mt-2 text-sm ${sub}`}>과한 연출 없이도 표정과 리듬으로 분위기를 바꾼다.</p>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-            <p className="text-xs text-white/50">특기</p>
-            <p className="mt-2 text-lg font-semibold">표정으로 다 말함</p>
-            <p className="mt-2 text-sm text-white/60">
-              한 번 보면 잊기 어려운 리액션(=팬이 생기는 지점).
-            </p>
+          <div className={panel}>
+            <p className={`text-xs ${faint}`}>특기</p>
+            <p className={`mt-2 text-lg font-semibold ${heading}`}>표정으로 다 말함</p>
+            <p className={`mt-2 text-sm ${sub}`}>한 번 보면 잊기 어려운 리액션(=팬이 생기는 지점).</p>
           </div>
 
           {/* 좋아하는 것 */}
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-            <p className="text-xs text-white/50">좋아하는 것</p>
+          <div className={panel}>
+            <p className={`text-xs ${faint}`}>좋아하는 것</p>
             <div className="mt-3 flex flex-wrap gap-2">
               {likes.map((c) => (
                 <button
                   key={c.id}
                   type="button"
                   onClick={() => onClickChip(c)}
-                  className={[
-                    "rounded-full border px-3 py-1 text-sm transition",
-                    active === c.id
-                      ? "border-white/25 bg-white/15 text-white"
-                      : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10",
-                  ].join(" ")}
+                  className={[chipBase, active === c.id ? chipActive : ""].join(" ")}
                 >
                   {c.label}
                 </button>
@@ -99,26 +116,25 @@ export default function Profile() {
           </div>
 
           {/* 싫어하는 것 */}
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-            <p className="text-xs text-white/50">싫어하는 것</p>
+          <div className={panel}>
+            <p className={`text-xs ${faint}`}>싫어하는 것</p>
             <div className="mt-3 flex flex-wrap gap-2">
               {dislikes.map((c) => (
                 <button
                   key={c.id}
                   type="button"
                   onClick={() => onClickChip(c)}
-                  className={[
-                    "rounded-full border px-3 py-1 text-sm transition",
-                    active === c.id
-                      ? "border-white/25 bg-white/15 text-white"
-                      : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10",
-                  ].join(" ")}
+                  className={[chipBase, active === c.id ? chipActive : ""].join(" ")}
                 >
                   {c.label}
                 </button>
               ))}
             </div>
           </div>
+        </div>
+
+        <div className={`mt-6 text-xs ${body}`}>
+          * 라이트/다크 모두 동일한 글래스 질감 유지하면서, 라이트에서 글자가 죽지 않도록 톤만 분리했음.
         </div>
       </GlassCard>
     </section>
