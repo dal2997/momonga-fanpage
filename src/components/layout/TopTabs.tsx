@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase/client";
+import ThemeToggle from "@/components/layout/ThemeToggle";
 
 type TabKey = "home" | "gallery" | "collection" | "profile";
 
@@ -33,11 +34,11 @@ export function AuthButtons() {
     window.location.href = "/";
   }
 
-  // ✅ 공통 pill 스타일 (라이트/다크 둘 다)
+  // ✅ 라이트 기본: zinc, 다크: white
   const pill =
     "rounded-full border px-4 py-2 text-sm transition " +
-    "border-black/10 bg-black/5 text-zinc-800 hover:bg-black/10 " +
-    "dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10";
+    "border-black/10 bg-black/[0.04] text-zinc-900 hover:bg-black/[0.07] " +
+    "dark:border-white/10 dark:bg-white/[0.06] dark:text-white/85 dark:hover:bg-white/[0.10]";
 
   if (!email) {
     return (
@@ -49,7 +50,7 @@ export function AuthButtons() {
 
   return (
     <div className="flex items-center gap-2">
-      <span className="hidden max-w-[220px] truncate text-xs text-zinc-600 dark:text-white/60 sm:inline">
+      <span className="hidden max-w-[220px] truncate text-xs text-zinc-700 dark:text-white/60 sm:inline">
         {email}
       </span>
       <button type="button" onClick={logout} className={pill}>
@@ -87,18 +88,14 @@ export default function TopTabs({
 
   const handleTabClick = useCallback(
     (key: TabKey) => {
-      // ✅ 수집: 로그아웃이면 공개 페이지로 보내기
       if (key === "collection" && !isAuthed) {
         window.location.href = publicCollectionHref;
         return;
       }
-
-      // ✅ 프로필: 로그아웃이면 로그인으로 보내기
       if (key === "profile" && !isAuthed) {
         window.location.href = "/login";
         return;
       }
-
       onChange(key);
     },
     [isAuthed, onChange, publicCollectionHref]
@@ -106,12 +103,29 @@ export default function TopTabs({
 
   return (
     <header className="fixed inset-x-0 top-0 z-50">
-      {/* ✅ 헤더 배경(라이트/다크 분리) */}
+      {/* ✅ 헤더 유리 레이어 (flat 방지: rim + inner shadow + highlight) */}
       <div
         className="
           pointer-events-none absolute inset-0 border-b
           border-black/10 bg-white/55 backdrop-blur-xl
           dark:border-white/10 dark:bg-black/30
+        "
+      />
+      <div
+        aria-hidden
+        className="
+          pointer-events-none absolute inset-0
+          [box-shadow:inset_0_1px_0_rgba(255,255,255,0.40),inset_0_-20px_50px_rgba(0,0,0,0.06)]
+          dark:[box-shadow:inset_0_1px_0_rgba(255,255,255,0.10),inset_0_-30px_70px_rgba(0,0,0,0.35)]
+        "
+      />
+      <div
+        aria-hidden
+        className="
+          pointer-events-none absolute inset-0 opacity-60
+          bg-[radial-gradient(900px_260px_at_20%_-40%,rgba(255,255,255,0.55),transparent_60%)]
+          dark:opacity-70
+          dark:bg-[radial-gradient(900px_260px_at_20%_-40%,rgba(255,255,255,0.18),transparent_60%)]
         "
       />
 
@@ -122,7 +136,7 @@ export default function TopTabs({
           onClick={() => handleTabClick("home")}
           className="
             z-10 text-sm font-semibold tracking-wide transition
-            text-zinc-900 hover:text-black
+            text-zinc-900 hover:text-zinc-950
             dark:text-white/90 dark:hover:text-white
           "
           aria-label="Go Home"
@@ -135,19 +149,29 @@ export default function TopTabs({
           <div
             className="
               relative inline-flex items-center gap-1 rounded-full border p-1 backdrop-blur
-              border-black/10 bg-black/5
-              dark:border-white/10 dark:bg-white/5
+              border-black/10 bg-black/[0.04]
+              dark:border-white/10 dark:bg-white/[0.06]
+              shadow-[0_18px_60px_rgba(0,0,0,0.10)]
+              dark:shadow-[0_22px_80px_rgba(0,0,0,0.45)]
             "
           >
-            {/* ✅ glass highlight 한 겹(밋밋함 제거) */}
+            {/* ✅ glass highlight 한 겹 */}
             <div
               aria-hidden
               className="
                 pointer-events-none absolute inset-0 rounded-full
-                bg-[radial-gradient(600px_160px_at_20%_-30%,rgba(255,255,255,0.55),transparent_60%)]
+                bg-[radial-gradient(600px_160px_at_20%_-30%,rgba(255,255,255,0.65),transparent_60%)]
                 opacity-35
                 dark:bg-[radial-gradient(600px_160px_at_20%_-30%,rgba(255,255,255,0.22),transparent_60%)]
-                dark:opacity-60
+                dark:opacity-70
+              "
+            />
+            {/* ✅ rim */}
+            <div
+              aria-hidden
+              className="
+                pointer-events-none absolute inset-0 rounded-full ring-1 ring-inset
+                ring-black/5 dark:ring-white/12
               "
             />
 
@@ -161,9 +185,17 @@ export default function TopTabs({
                   onClick={() => handleTabClick(t.key)}
                   className={[
                     "relative rounded-full px-4 py-2 text-sm transition",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-black/15 dark:focus-visible:ring-white/20",
                     active
-                      ? "bg-black/10 text-zinc-900 dark:bg-white/10 dark:text-white"
-                      : "text-zinc-600 hover:bg-black/10 hover:text-zinc-900 dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white/80",
+                      ? [
+                          "bg-black/[0.08] text-zinc-900",
+                          "dark:bg-white/[0.12] dark:text-white",
+                          "shadow-[0_10px_30px_rgba(0,0,0,0.10)] dark:shadow-[0_14px_40px_rgba(0,0,0,0.45)]",
+                        ].join(" ")
+                      : [
+                          "text-zinc-700 hover:bg-black/[0.06] hover:text-zinc-900",
+                          "dark:text-white/65 dark:hover:bg-white/[0.10] dark:hover:text-white/85",
+                        ].join(" "),
                   ].join(" ")}
                 >
                   {t.label}
@@ -173,8 +205,9 @@ export default function TopTabs({
           </div>
         </nav>
 
-        {/* RIGHT: 로그인/로그아웃 */}
-        <div className="ml-auto">
+        {/* RIGHT: 테마 토글 + 로그인/로그아웃 */}
+        <div className="ml-auto flex items-center gap-2">
+          <ThemeToggle />
           <AuthButtons />
         </div>
       </div>

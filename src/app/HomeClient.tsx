@@ -68,11 +68,27 @@ export default function HomeClient({
   const galleryPreview = useMemo(() => gallery.slice(0, 4), []);
   const publicCollectionHref = `/u/${encodeURIComponent(publicHandle)}?tab=all`;
 
-  // ✅ 이미지 위 태그 pill: 라이트/다크 모두 자연스럽게(이미지 위라 흰 텍스트는 유지)
+  // ✅ 이미지 위 태그 pill: 이미지 위라 흰 텍스트 유지(OK)
   const imageTagPill =
     "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs backdrop-blur " +
     "border-white/15 bg-black/25 text-white/90 shadow-[0_10px_24px_rgba(0,0,0,0.25)] " +
     "dark:border-white/10 dark:bg-white/10 dark:text-white/80";
+
+  // ✅ 본문 공통 텍스트
+  const title = "text-zinc-900 dark:text-white";
+  const sub = "text-zinc-600 dark:text-white/60";
+  const body = "text-zinc-700 dark:text-white/70";
+
+  // ✅ 라이트/다크 공통 pill 버튼(유리감 유지)
+  const pill =
+    "relative overflow-hidden rounded-full border px-4 py-2 text-sm transition " +
+    "border-black/10 bg-black/[0.04] text-zinc-900 hover:bg-black/[0.07] " +
+    "dark:border-white/10 dark:bg-white/[0.06] dark:text-white/85 dark:hover:bg-white/[0.10] " +
+    "backdrop-blur-xl backdrop-saturate-150 " +
+    "shadow-[0_16px_50px_rgba(0,0,0,0.10)] dark:shadow-[0_18px_60px_rgba(0,0,0,0.45)]";
+
+  // ✅ 라이트/다크 링크(텍스트)
+  const linkText = "text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/60 dark:hover:text-white";
 
   return (
     <main className="relative">
@@ -86,14 +102,8 @@ export default function HomeClient({
             {/* 순간 미리보기 */}
             <section className="scroll-mt-24">
               <div className="flex items-end justify-between">
-                <h2 className="text-2xl font-semibold text-zinc-900 dark:text-white">
-                  순간 미리보기
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => onChange("gallery")}
-                  className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/60 dark:hover:text-white"
-                >
+                <h2 className={`text-2xl font-semibold ${title}`}>순간 미리보기</h2>
+                <button type="button" onClick={() => onChange("gallery")} className={linkText}>
                   전체 보기 →
                 </button>
               </div>
@@ -103,22 +113,14 @@ export default function HomeClient({
                   <GlassCard key={item.id} className="overflow-hidden p-0">
                     <div className="relative h-[200px] w-full overflow-hidden rounded-2xl">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={item.image}
-                        alt={item.title}
-                        className="block h-full w-full object-cover"
-                      />
+                      <img src={item.image} alt={item.title} className="block h-full w-full object-cover" />
                       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-black/0" />
 
                       <div className="absolute bottom-0 left-0 right-0 p-5">
                         <div className={imageTagPill}>{item.tag}</div>
 
-                        <div className="mt-3 text-lg font-semibold text-white">
-                          {item.title}
-                        </div>
-                        <div className="mt-1 text-sm text-white/75">
-                          {item.subtitle}
-                        </div>
+                        <div className="mt-3 text-lg font-semibold text-white">{item.title}</div>
+                        <div className="mt-1 text-sm text-white/75">{item.subtitle}</div>
                       </div>
                     </div>
                   </GlassCard>
@@ -129,13 +131,8 @@ export default function HomeClient({
             {/* 수집 미리보기 */}
             <section className="scroll-mt-24">
               <div className="flex items-end justify-between">
-                <h2 className="text-2xl font-semibold text-zinc-900 dark:text-white">
-                  수집 미리보기
-                </h2>
-                <Link
-                  href={publicCollectionHref}
-                  className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/60 dark:hover:text-white"
-                >
+                <h2 className={`text-2xl font-semibold ${title}`}>수집 미리보기</h2>
+                <Link href={publicCollectionHref} className={linkText}>
                   모몽가 수집(공개) →
                 </Link>
               </div>
@@ -148,15 +145,9 @@ export default function HomeClient({
                       <div className="relative h-[200px] w-full overflow-hidden rounded-2xl">
                         {img ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={img}
-                            alt={item.title ?? "item"}
-                            className="h-full w-full object-cover"
-                          />
+                          <img src={img} alt={item.title ?? "item"} className="h-full w-full object-cover" />
                         ) : (
-                          <div className="grid h-full place-items-center text-sm text-zinc-600 dark:text-white/50">
-                            이미지 없음
-                          </div>
+                          <div className={`grid h-full place-items-center text-sm ${sub}`}>이미지 없음</div>
                         )}
 
                         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-black/0" />
@@ -177,37 +168,22 @@ export default function HomeClient({
 
               <div className="mt-6">
                 <GlassCard className="p-6">
-                  <div className="text-sm text-zinc-600 dark:text-white/60">TIP</div>
+                  <div className={`text-sm ${sub}`}>TIP</div>
 
-                  <div className="mt-2 text-lg font-semibold text-zinc-900 dark:text-white">
+                  <div className={`mt-2 text-lg font-semibold ${title}`}>
                     수집중 → 수집완료로 옮기면서 내 굿즈 아카이브를 쌓자
                   </div>
 
-                  <div className="mt-3 text-sm text-zinc-600 dark:text-white/60">
+                  <div className={`mt-3 text-sm ${sub}`}>
                     원가/중고가를 (선택)으로 기록해두면, 나중에 판매 기능 붙일 때 바로 자산/거래 데이터로 이어짐.
                   </div>
 
                   <div className="mt-5 flex flex-wrap gap-2">
-                    <Link
-                      href={publicCollectionHref}
-                      className="
-                        rounded-full border px-4 py-2 text-sm transition
-                        border-black/10 bg-black/5 text-zinc-800 hover:bg-black/10
-                        dark:border-white/10 dark:bg-white/10 dark:text-white/90 dark:hover:bg-white/15
-                      "
-                    >
+                    <Link href={publicCollectionHref} className={pill}>
                       공개 수집 보기
                     </Link>
 
-                    <button
-                      type="button"
-                      onClick={() => onChange("collection")}
-                      className="
-                        rounded-full border px-4 py-2 text-sm transition
-                        border-black/10 bg-black/5 text-zinc-800 hover:bg-black/10
-                        dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10
-                      "
-                    >
+                    <button type="button" onClick={() => onChange("collection")} className={pill}>
                       내 수집 관리(로그인)
                     </button>
                   </div>
@@ -222,35 +198,21 @@ export default function HomeClient({
             {/* 프로필 미리보기 */}
             <section className="scroll-mt-24">
               <div className="flex items-end justify-between">
-                <h2 className="text-2xl font-semibold text-zinc-900 dark:text-white">
-                  프로필 미리보기
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => onChange("profile")}
-                  className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/60 dark:hover:text-white"
-                >
+                <h2 className={`text-2xl font-semibold ${title}`}>프로필 미리보기</h2>
+                <button type="button" onClick={() => onChange("profile")} className={linkText}>
                   전체 보기 →
                 </button>
               </div>
 
               <div className="mt-4">
                 <GlassCard className="p-6">
-                  <div className="text-sm text-zinc-600 dark:text-white/60">나의 덕질 상태</div>
+                  <div className={`text-sm ${sub}`}>나의 덕질 상태</div>
 
-                  <div className="mt-2 text-lg font-semibold text-zinc-900 dark:text-white">
+                  <div className={`mt-2 text-lg font-semibold ${title}`}>
                     좋아하는 포인트 / 취향 태그를 정리해두면 기록이 더 재밌어짐
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => onChange("profile")}
-                    className="
-                      mt-5 rounded-full border px-4 py-2 text-sm transition
-                      border-black/10 bg-black/5 text-zinc-800 hover:bg-black/10
-                      dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10
-                    "
-                  >
+                  <button type="button" onClick={() => onChange("profile")} className={`mt-5 ${pill}`}>
                     프로필 수정하러 가기
                   </button>
                 </GlassCard>

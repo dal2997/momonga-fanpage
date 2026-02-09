@@ -1,46 +1,47 @@
 @import "tailwindcss";
 
+/* ✅ dark:를 media가 아니라 .dark 클래스로 강제 */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* =========================
-   Base theme variables
+   Base theme variables (class-based)
 ========================= */
 :root {
   --background: #ffffff;
   --foreground: #171717;
 
-  /* ✅ 라이트용 표면/텍스트 토큰 (컴포넌트가 white 박아도 최소 방어 가능) */
+  /* surface tokens */
   --surface: rgba(0, 0, 0, 0.04);
   --surface-border: rgba(0, 0, 0, 0.10);
   --surface-text: rgba(23, 23, 23, 0.88);
 
-  /* 마우스 글로우 포지션 (JS가 갱신) */
+  /* mouse glow position */
   --mx: 50vw;
   --my: 40vh;
 
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* ✅ Tailwind/next-themes: html.dark 기준으로 토큰 전환 */
+html.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
 
-    --surface: rgba(255, 255, 255, 0.05);
-    --surface-border: rgba(255, 255, 255, 0.10);
-    --surface-text: rgba(255, 255, 255, 0.82);
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-border: rgba(255, 255, 255, 0.12);
+  --surface-text: rgba(255, 255, 255, 0.82);
 
-    color-scheme: dark;
-  }
+  color-scheme: dark;
 }
 
 html {
   scroll-behavior: smooth;
 }
 
-/* ✅ 네가 원한 “심플 SVG 커서” (동그라미/테두리 없음) */
+/* ✅ 심플 SVG 커서 */
 html, body {
   cursor: url("/cursor/momonga-glass.svg") 16 16, auto;
 }
-
 a, button, [role="button"], input, select, textarea, label {
   cursor: url("/cursor/momonga-glass.svg") 16 16, pointer;
 }
@@ -48,15 +49,22 @@ a, button, [role="button"], input, select, textarea, label {
 body {
   background: var(--background);
   color: var(--foreground);
-
-  /* ✅ 아주 약한 그라데이션 */
-  background-image:
-    radial-gradient(1200px 800px at 20% 10%, rgba(255,255,255,0.05), transparent 60%),
-    radial-gradient(900px 700px at 80% 20%, rgba(255,255,255,0.035), transparent 60%),
-    radial-gradient(1100px 900px at 50% 90%, rgba(255,255,255,0.025), transparent 60%);
-  background-attachment: fixed;
-
   font-family: Arial, Helvetica, sans-serif;
+
+  /* ✅ 라이트 기본 그라데이션(누리끼리 방지: '검정' 잉크 아주 약하게) */
+  background-image:
+    radial-gradient(1100px 800px at 18% 12%, rgba(0,0,0,0.06), transparent 60%),
+    radial-gradient(900px 700px at 82% 22%, rgba(0,0,0,0.04), transparent 62%),
+    radial-gradient(1200px 900px at 50% 92%, rgba(0,0,0,0.03), transparent 65%);
+  background-attachment: fixed;
+}
+
+/* ✅ 다크일 때는 다크 전용 그라데이션(화이트 하이라이트) */
+html.dark body {
+  background-image:
+    radial-gradient(1100px 800px at 18% 12%, rgba(255,255,255,0.08), transparent 60%),
+    radial-gradient(900px 700px at 82% 22%, rgba(255,255,255,0.06), transparent 62%),
+    radial-gradient(1200px 900px at 50% 92%, rgba(255,255,255,0.04), transparent 65%);
 }
 
 /* =========================
@@ -71,33 +79,65 @@ body {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E");
 }
 
+/* ✅ spotlight: 라이트/다크 분리 */
 .spotlight {
   position: fixed;
   inset: -240px;
   pointer-events: none;
+  filter: blur(6px);
+  opacity: 0.9;
+
+  /* default: LIGHT */
+  background:
+    radial-gradient(900px 700px at 20% 10%, rgba(0,0,0,0.10), transparent 60%),
+    radial-gradient(1000px 900px at 80% 20%, rgba(0,0,0,0.07), transparent 62%),
+    radial-gradient(1200px 1100px at 50% 90%, rgba(0,0,0,0.05), transparent 65%);
+}
+
+html.dark .spotlight {
   background:
     radial-gradient(700px 700px at 20% 10%, rgba(255,255,255,0.18), transparent 60%),
     radial-gradient(900px 900px at 80% 20%, rgba(255,255,255,0.12), transparent 62%),
     radial-gradient(1100px 1000px at 50% 90%, rgba(255,255,255,0.08), transparent 65%);
-  filter: blur(6px);
-  opacity: 0.9;
 }
 
-/* ✅ 마우스 주변 “빛 번짐” */
+/* ✅ (호환용) spotlight-light 클래스가 남아있어도 동작하게 유지 */
+.spotlight-light {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(800px 500px at 20% 10%, rgba(0,0,0,0.06), transparent 60%),
+    radial-gradient(700px 420px at 80% 30%, rgba(0,0,0,0.04), transparent 60%),
+    radial-gradient(900px 700px at 50% 90%, rgba(0,0,0,0.03), transparent 60%);
+}
+
+/* ✅ 마우스 주변 “빛 번짐”: 라이트/다크 분리 */
 body::after {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
+  transition: background 0.06s linear;
+  mix-blend-mode: screen;
+  opacity: 0.7;
+
+  background:
+    radial-gradient(
+      220px 220px at var(--mx, 50vw) var(--my, 40vh),
+      rgba(0,0,0,0.08),
+      transparent 60%
+    );
+}
+
+html.dark body::after {
   background:
     radial-gradient(
       220px 220px at var(--mx, 50vw) var(--my, 40vh),
       rgba(255,255,255,0.07),
       transparent 60%
     );
-  transition: background 0.06s linear;
-  mix-blend-mode: screen;
-  opacity: 0.7;
 }
 
 /* =========================
