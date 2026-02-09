@@ -1,3 +1,4 @@
+// src/app/HomeClient.tsx
 "use client";
 
 import Link from "next/link";
@@ -30,7 +31,6 @@ function safeHomeTab(v: string | null): TabKey {
 }
 
 function pickPreviewImage(item: CollectionPreviewRow) {
-  // ✅ 수집완료면 내사진(my_image)이 우선, 없으면 image
   if (item.status === "collected") return item.my_image ?? item.image;
   return item.image ?? item.my_image;
 }
@@ -45,10 +45,8 @@ export default function HomeClient({
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // ✅ 최초 탭을 URL 기준으로(예: /?tab=collection)
   const [tab, setTab] = useState<TabKey>(() => safeHomeTab(searchParams.get("tab")));
 
-  // ✅ 뒤로가기/앞으로가기 등으로 URL이 바뀌면 탭도 따라가게
   useEffect(() => {
     const nextTab = safeHomeTab(searchParams.get("tab"));
     setTab(nextTab);
@@ -69,6 +67,12 @@ export default function HomeClient({
 
   const galleryPreview = useMemo(() => gallery.slice(0, 4), []);
   const publicCollectionHref = `/u/${encodeURIComponent(publicHandle)}?tab=all`;
+
+  // ✅ 이미지 위 태그 pill: 라이트/다크 모두 자연스럽게(이미지 위라 흰 텍스트는 유지)
+  const imageTagPill =
+    "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs backdrop-blur " +
+    "border-white/15 bg-black/25 text-white/90 shadow-[0_10px_24px_rgba(0,0,0,0.25)] " +
+    "dark:border-white/10 dark:bg-white/10 dark:text-white/80";
 
   return (
     <main className="relative">
@@ -105,17 +109,16 @@ export default function HomeClient({
                         className="block h-full w-full object-cover"
                       />
                       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-black/0" />
+
                       <div className="absolute bottom-0 left-0 right-0 p-5">
-                        <div
-                          className="
-                            inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs backdrop-blur
-                            border-white/10 bg-white/10 text-white/80
-                          "
-                        >
-                          {item.tag}
+                        <div className={imageTagPill}>{item.tag}</div>
+
+                        <div className="mt-3 text-lg font-semibold text-white">
+                          {item.title}
                         </div>
-                        <div className="mt-3 text-lg font-semibold text-white">{item.title}</div>
-                        <div className="mt-1 text-sm text-white/70">{item.subtitle}</div>
+                        <div className="mt-1 text-sm text-white/75">
+                          {item.subtitle}
+                        </div>
                       </div>
                     </div>
                   </GlassCard>
@@ -137,7 +140,6 @@ export default function HomeClient({
                 </Link>
               </div>
 
-              {/* ✅ 미리보기 이미지 그리드 */}
               <div className="mt-6 grid gap-6 md:grid-cols-3">
                 {collectionPreview.slice(0, 3).map((item) => {
                   const img = pickPreviewImage(item);
@@ -156,9 +158,11 @@ export default function HomeClient({
                             이미지 없음
                           </div>
                         )}
+
                         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-black/0" />
+
                         <div className="absolute bottom-0 left-0 right-0 p-4">
-                          <div className="text-xs text-white/70">
+                          <div className="text-xs text-white/75">
                             {item.status === "collecting" ? "수집중" : "수집완료"}
                           </div>
                           <div className="mt-1 line-clamp-1 text-base font-semibold text-white">
@@ -171,7 +175,6 @@ export default function HomeClient({
                 })}
               </div>
 
-              {/* ✅ 버튼 2개(공개/내관리) */}
               <div className="mt-6">
                 <GlassCard className="p-6">
                   <div className="text-sm text-zinc-600 dark:text-white/60">TIP</div>
