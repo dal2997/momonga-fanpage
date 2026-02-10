@@ -669,7 +669,7 @@ export default function Collection() {
       <div className="flex items-end justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold">수집</h2>
-          <p className="mt-1 text-sm text-white/50">
+          <p className="mt-1 text-sm text-muted-foreground">
             “수집중”에서 “수집완료”로 옮기며 내 굿즈 아카이브를 만든다
           </p>
         </div>
@@ -680,8 +680,8 @@ export default function Collection() {
             onClick={() => setView("collecting")}
             className={`rounded-full border px-4 py-2 text-sm ${
               view === "collecting"
-                ? "border-white/20 bg-white/10 text-white"
-                : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                ? "border-foreground/20 bg-foreground/10 text-foreground"
+                : "border-foreground/10 bg-foreground/5 text-muted-foreground hover:bg-foreground/10"
             }`}
           >
             수집중
@@ -692,8 +692,8 @@ export default function Collection() {
             onClick={() => setView("collected")}
             className={`rounded-full border px-4 py-2 text-sm ${
               view === "collected"
-                ? "border-white/20 bg-white/10 text-white"
-                : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
+                ? "border-foreground/20 bg-foreground/10 text-foreground"
+                : "border-foreground/10 bg-foreground/5 text-muted-foreground hover:bg-foreground/10"
             }`}
           >
             수집완료
@@ -708,7 +708,7 @@ export default function Collection() {
               }
               setAddOpen(true);
             }}
-            className="ml-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+            className="ml-2 rounded-full border border-foreground/10 bg-foreground/5 px-4 py-2 text-sm text-foreground/80 hover:bg-foreground/10"
           >
             + 수집중 추가
           </button>
@@ -722,7 +722,7 @@ export default function Collection() {
               }
               setQuickOpen(true);
             }}
-            className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-white hover:bg-white/15"
+            className="rounded-full border border-foreground/10 bg-foreground/10 px-4 py-2 text-sm text-foreground hover:bg-foreground/15"
           >
             ⚡ 수집완료 빠른추가
           </button>
