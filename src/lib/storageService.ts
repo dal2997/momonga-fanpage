@@ -35,6 +35,31 @@ function assertSingleFolder(folder: string) {
   }
 }
 
+export function getStoragePathFromPublicUrl(url: string): string | null {
+  if (!url) return null;
+  const marker = `/storage/v1/object/public/${BUCKET}/`;
+  const idx = url.indexOf(marker);
+  if (idx < 0) return null;
+  const path = url.slice(idx + marker.length);
+  return path || null;
+}
+
+/**
+ * ✅ 이 public URL이 "내가 삭제 가능한 형태인지" 빠르게 판별
+ * - 우리가 원하는 형태: {folder}/{user_id}/{filename}
+ * - folder는 1단이어야 하고(parts[0]), user_id는 parts[1]
+ */
+export function canDeletePublicUrlAsOwner(url: string, userId: string): boolean {
+  const path = getStoragePathFromPublicUrl(url);
+  if (!path) return false;
+
+  const parts = path.split("/"); // [folder, user_id, filename...]
+  if (parts.length < 3) return false;
+  if (parts[1] !== userId) return false;
+
+  return true;
+}
+
 // ✅ 오버로드: (file, folder) 또는 ({file, folder, upsert})
 export async function uploadToMomongaBucket(
   file: File,
