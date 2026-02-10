@@ -1,4 +1,4 @@
-// lib/storageService.ts
+// src/lib/supabase/storageService.ts
 import { supabase } from "@/lib/supabase/client";
 import { resizeImageFile } from "@/lib/imageResize";
 
@@ -27,6 +27,14 @@ function getPublicUrl(path: string) {
   return data.publicUrl;
 }
 
+function assertSingleFolder(folder: string) {
+  // RLS가 (storage.foldername(name))[2] 를 user_id로 보는 구조라서
+  // folder는 반드시 "collected" / "collecting" 같은 1단이어야 함
+  if (!folder || folder.includes("/")) {
+    throw new Error(`uploadToMomongaBucket: folder must be a single segment (e.g. "collected"). got: "${folder}"`);
+  }
+}
+
 // ✅ 오버로드: (file, folder) 또는 ({file, folder, upsert})
 export async function uploadToMomongaBucket(
   file: File,
@@ -47,9 +55,16 @@ export async function uploadToMomongaBucket(
   const upsert = a instanceof File ? true : (a.upsert ?? true);
 
   if (!folder) throw new Error("uploadToMomongaBucket: folder is required");
+  assertSingleFolder(folder);
+
+  // ✅ 업로드는 인증 필요 (RLS INSERT가 authenticated만 허용)
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (authError || !user) throw new Error("Authentication required for upload");
 
   // ✅ 업로드 전 리사이즈(이미지일 때만)
-  // - GIF/SVG는 resizeImageFile 내부에서 그대로 반환하도록 해놨으면 OK
   const file =
     inputFile.type.startsWith("image/")
       ? await resizeImageFile(inputFile, {
@@ -60,7 +75,9 @@ export async function uploadToMomongaBucket(
       : inputFile;
 
   const ext = getExtFromFileOrType(file);
-  const path = `${folder}/${Date.now()}_${randomId()}.${ext}`;
+
+  // ✅ 핵심: {folder}/{user_id}/{filename}
+  const path = `${folder}/${user.id}/${Date.now()}_${randomId()}.${ext}`;
 
   const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
     upsert,
@@ -75,10 +92,17 @@ export async function uploadToMomongaBucket(
 
 /**
  * ✅ public URL -> storage path로 변환해서 삭제
- * 예) https://xxx.supabase.co/storage/v1/object/public/momonga/collected/...
+ * 예) https://xxx.supabase.co/storage/v1/object/public/momonga/collected/{user_id}/...
  */
 export async function removeByPublicUrl(url: string) {
   if (!url) return;
+
+  // ✅ 삭제는 인증 필요 (RLS DELETE가 authenticated만 허용)
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (authError || !user) throw new Error("Authentication required to delete files");
 
   const marker = `/storage/v1/object/public/${BUCKET}/`;
   const idx = url.indexOf(marker);
@@ -86,6 +110,13 @@ export async function removeByPublicUrl(url: string) {
 
   const path = url.slice(idx + marker.length);
   if (!path) return;
+
+  // ✅ 1차 소유권 검증: {folder}/{user_id}/... 구조 확인
+  const parts = path.split("/"); // [folder, user_id, filename...]
+  if (parts.length < 2) throw new Error("Invalid storage path");
+  if (parts[1] !== user.id) {
+    throw new Error("Unauthorized: you can only delete your own files");
+  }
 
   const { error } = await supabase.storage.from(BUCKET).remove([path]);
   if (error) throw error;
