@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { quotes } from "@/data/quotes";
 import GlassCard from "@/components/layout/GlassCard";
@@ -71,15 +72,33 @@ export default function Hero() {
               </GlassIcon>
             </div>
 
-            <p className={`mt-6 ${sub}`}>팬이 팬심으로 만든 공간 ✨</p>
+            <p className={`mt-6 ${sub}`}>모몽가를 좋아하는 사람들이  
+            순간을 기록하고, 굿즈를 수집해  
+            자기만의 페이지로 남기는 공간 ✨
+            </p>
 
             <div className="mt-8 rounded-2xl border border-black/10 bg-black/[0.04] p-6 dark:border-white/10 dark:bg-white/5">
               <p className={`text-sm ${faint}`}>오늘의 한 줄</p>
               <p className={`mt-2 text-lg ${heading}`}>{mounted ? quote : "…"}</p>
             </div>
 
-            {/* scroll hint */}
-            <p className={`mt-8 text-sm ${hint}`}>↓ 아래로 내려서 팬들이 좋아하는 순간 보기</p>
+            {/* CTA + mini flow */}
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <Link
+                href="/login"
+                className={`
+                  inline-flex items-center justify-center rounded-full border px-5 py-2 text-sm font-medium
+                  border-black/10 bg-black/[0.06] text-zinc-900 hover:bg-black/[0.10]
+                  dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15
+                `}
+              >
+                내 페이지 만들어보기
+              </Link>
+
+              <div className={`text-sm ${hint}`}>
+                순간 기록 → 굿즈 수집 → 내 페이지 공유
+              </div>
+            </div>
           </div>
 
           {/* 오른쪽: 비주얼 */}
