@@ -11,18 +11,32 @@ export default function OwnerManageButton({ ownerId }: { ownerId: string }) {
   useEffect(() => {
     let alive = true;
 
-    (async () => {
-      const { data } = await supabase.auth.getUser();
-      const uid = data.user?.id ?? null;
+    const apply = (uid: string | null) => {
       if (!alive) return;
       setIsOwner(uid === ownerId);
       setChecked(true);
+    };
+
+    // 1) 최초 체크
+    (async () => {
+      try {
+        const { data, error } = await supabase.auth.getUser();
+        if (error) {
+          // 보통 세션 없으면 error 없이 user=null이지만,
+          // 혹시 모를 케이스는 안전하게 "비소유자"로 처리
+          apply(null);
+          return;
+        }
+        apply(data.user?.id ?? null);
+      } catch {
+        apply(null);
+      }
     })();
 
+    // 2) auth 변화 반영
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      const uid = session?.user?.id ?? null;
-      setIsOwner(uid === ownerId);
-      setChecked(true);
+      // ✅ 언마운트 이후 setState 방지
+      apply(session?.user?.id ?? null);
     });
 
     return () => {

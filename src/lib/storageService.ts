@@ -28,12 +28,20 @@ function getPublicUrl(path: string) {
 }
 
 function assertSingleFolder(folder: string) {
-  // RLS가 (storage.foldername(name))[2] 를 user_id로 보는 구조라서
-  // folder는 반드시 "collected" / "collecting" 같은 1단이어야 함
+  // 1) 폴더 값 존재 + "/" 금지
   if (!folder || folder.includes("/")) {
-    throw new Error(`uploadToMomongaBucket: folder must be a single segment (e.g. "collected"). got: "${folder}"`);
+    throw new Error(
+      `uploadToMomongaBucket: folder must be a single segment (e.g. "collected"). got: "${folder}"`
+    );
+  }
+
+  // 2) ✅ 허용 폴더만 통과 (경로 오염 방지)
+  const allowed = ["collecting", "collected"] as const;
+  if (!allowed.includes(folder as any)) {
+    throw new Error(`uploadToMomongaBucket: invalid folder "${folder}"`);
   }
 }
+
 
 export function getStoragePathFromPublicUrl(url: string): string | null {
   if (!url) return null;

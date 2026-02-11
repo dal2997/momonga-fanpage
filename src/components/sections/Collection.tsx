@@ -142,6 +142,22 @@ export default function Collection() {
   const reqIdRef = useRef(0);
   const aliveRef = useRef(true);
 
+  // ✅ (B) 수집완료 검색/필터/정렬
+  const [qCollected, setQCollected] = useState("");
+  const [fMyPhoto, setFMyPhoto] = useState<"all" | "with" | "without">("all");
+  const [fMemo, setFMemo] = useState<"all" | "with" | "without">("all");
+  const [fLink, setFLink] = useState<"all" | "with" | "without">("all");
+  const [sortCollected, setSortCollected] = useState<
+    | "newest"
+    | "oldest"
+    | "titleAsc"
+    | "titleDesc"
+    | "origHigh"
+    | "origLow"
+    | "usedHigh"
+    | "usedLow"
+  >("newest");
+
   // DB -> UI 변환 (snake_case -> camelCase)
   const mapRowToItem = useCallback((r: any): CollectItem => {
     return {
@@ -297,10 +313,74 @@ export default function Collection() {
     };
   }, [editMyImageMode, editMyImageFile, myDeleteRequested]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const list = useMemo(
-    () => (view === "collecting" ? collecting : collected),
-    [view, collecting, collected]
-  );
+  // ✅ (B) 수집완료 탭에서만 검색/필터/정렬 적용된 리스트
+  const displayList = useMemo(() => {
+    const base = view === "collecting" ? collecting : collected;
+    if (view !== "collected") return base;
+
+    const q = qCollected.trim().toLowerCase();
+
+    let arr = base.filter((it) => {
+      if (q) {
+        const hay = `${it.title ?? ""} ${it.myMemo ?? ""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+
+      if (fMyPhoto === "with" && !it.myImage) return false;
+      if (fMyPhoto === "without" && !!it.myImage) return false;
+
+      const hasMemo = !!(it.myMemo && it.myMemo.trim());
+      if (fMemo === "with" && !hasMemo) return false;
+      if (fMemo === "without" && hasMemo) return false;
+
+      const hasLink = !!(it.link && it.link.trim());
+      if (fLink === "with" && !hasLink) return false;
+      if (fLink === "without" && hasLink) return false;
+
+      return true;
+    });
+
+    const getOrig = (it: CollectItem) => it.originalPrice ?? -1;
+    const getUsed = (it: CollectItem) => it.usedPrice ?? -1;
+
+    if (sortCollected === "oldest") {
+      return [...arr].reverse(); // base가 최신순이라면 reverse가 오래된순
+    }
+
+    const copy = [...arr];
+    copy.sort((a, b) => {
+      const at = (a.title ?? "").toLowerCase();
+      const bt = (b.title ?? "").toLowerCase();
+
+      switch (sortCollected) {
+        case "titleAsc":
+          return at.localeCompare(bt);
+        case "titleDesc":
+          return bt.localeCompare(at);
+        case "origHigh":
+          return getOrig(b) - getOrig(a);
+        case "origLow":
+          return getOrig(a) - getOrig(b);
+        case "usedHigh":
+          return getUsed(b) - getUsed(a);
+        case "usedLow":
+          return getUsed(a) - getUsed(b);
+        case "newest":
+        default:
+          return 0; // 현재 순서 유지(대개 최신순)
+      }
+    });
+    return copy;
+  }, [
+    view,
+    collecting,
+    collected,
+    qCollected,
+    fMyPhoto,
+    fMemo,
+    fLink,
+    sortCollected,
+  ]);
 
   function resetAddForm() {
     setAddTitle("");
@@ -847,8 +927,83 @@ export default function Collection() {
             </div>
           )}
 
+          {/* ✅ (B) 수집완료 탭: 검색/필터/정렬 UI */}
+          {view === "collected" && (
+            <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  value={qCollected}
+                  onChange={(e) => setQCollected(e.target.value)}
+                  placeholder="검색: 제목/메모"
+                  className="w-64 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 outline-none placeholder:text-white/30"
+                />
+
+                <select
+                  value={fMyPhoto}
+                  onChange={(e) => setFMyPhoto(e.target.value as any)}
+                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 outline-none"
+                >
+                  <option value="all">내사진: 전체</option>
+                  <option value="with">내사진: 있음</option>
+                  <option value="without">내사진: 없음</option>
+                </select>
+
+                <select
+                  value={fMemo}
+                  onChange={(e) => setFMemo(e.target.value as any)}
+                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 outline-none"
+                >
+                  <option value="all">메모: 전체</option>
+                  <option value="with">메모: 있음</option>
+                  <option value="without">메모: 없음</option>
+                </select>
+
+                <select
+                  value={fLink}
+                  onChange={(e) => setFLink(e.target.value as any)}
+                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 outline-none"
+                >
+                  <option value="all">링크: 전체</option>
+                  <option value="with">링크: 있음</option>
+                  <option value="without">링크: 없음</option>
+                </select>
+
+                <select
+                  value={sortCollected}
+                  onChange={(e) => setSortCollected(e.target.value as any)}
+                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 outline-none"
+                >
+                  <option value="newest">정렬: 최신(기본)</option>
+                  <option value="oldest">정렬: 오래된</option>
+                  <option value="titleAsc">정렬: 제목 A→Z</option>
+                  <option value="titleDesc">정렬: 제목 Z→A</option>
+                  <option value="origHigh">정렬: 원가 높은순</option>
+                  <option value="origLow">정렬: 원가 낮은순</option>
+                  <option value="usedHigh">정렬: 중고가 높은순</option>
+                  <option value="usedLow">정렬: 중고가 낮은순</option>
+                </select>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQCollected("");
+                    setFMyPhoto("all");
+                    setFMemo("all");
+                    setFLink("all");
+                    setSortCollected("newest");
+                  }}
+                  className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-white hover:bg-white/15"
+                >
+                  초기화
+                </button>
+
+                <div className="ml-auto text-xs text-white/50">{displayList.length}개 표시됨</div>
+              </div>
+            </div>
+          )}
+
           <div className="mt-6 grid gap-6 md:grid-cols-3">
-            {list.map((item) => (
+            {displayList.map((item) => (
               <button key={item.id} type="button" onClick={() => openDetail(item)} className="text-left">
                 <GlassCard className="group overflow-hidden p-0">
                   <div className="relative h-[220px] w-full overflow-hidden rounded-2xl">
@@ -881,7 +1036,7 @@ export default function Collection() {
                     ) : (
                       <img
                         src={item.image ?? ""}
-                        alt={item.title}
+                        alt={item.title ?? ""}
                         className="block h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.04]"
                       />
                     )}
