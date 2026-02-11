@@ -1,4 +1,4 @@
-// src/lib/supabase/storageService.ts
+// src/lib/storageService.ts
 import { supabase } from "@/lib/supabase/client";
 import { resizeImageFile } from "@/lib/imageResize";
 
@@ -28,44 +28,45 @@ function getPublicUrl(path: string) {
 }
 
 /**
- * folder 입력값 정규화
+ * ✅ folder 입력 정규화
  * - 허용: "collecting" | "collected"
- * - 호환 허용(구버전): "collecting/<uid>" | "collected/<uid>"  (단, <uid>가 현재 로그인 user.id와 같을 때만)
+ * - (레거시/실수 대비) "collecting/<uid>" 형태가 오면:
+ *   - <uid>가 "현재 로그인 user.id"와 같으면 "collecting"으로 정규화
+ *   - 다르면 차단
  */
-function normalizeFolderOrThrow(raw: string, currentUserId: string): AllowedFolder {
-  const allowed: AllowedFolder[] = ["collecting", "collected"];
+function normalizeFolder(raw: string, userId: string): AllowedFolder {
+  const v = (raw ?? "").trim();
+  if (!v) throw new Error(`uploadToMomongaBucket: folder is required`);
 
-  if (!raw) throw new Error("uploadToMomongaBucket: folder is required");
+  const parts = v.split("/").filter(Boolean);
 
-  // ✅ 정상 케이스: 단일 세그먼트
-  if (!raw.includes("/")) {
-    if (!allowed.includes(raw as AllowedFolder)) {
-      throw new Error(`uploadToMomongaBucket: invalid folder "${raw}"`);
+  // "collecting" / "collected"
+  if (parts.length === 1) {
+    const f = parts[0] as AllowedFolder;
+    if (f !== "collecting" && f !== "collected") {
+      throw new Error(`uploadToMomongaBucket: invalid folder "${v}"`);
     }
-    return raw as AllowedFolder;
+    return f;
   }
 
-  // ✅ 호환 케이스: "collecting/<uid>"
-  const parts = raw.split("/").filter(Boolean);
-  if (parts.length !== 2) {
-    throw new Error(
-      `uploadToMomongaBucket: folder must be "collecting" or "collected" (optionally "/<uid>"). got: "${raw}"`
-    );
+  // "collecting/<uid>" 레거시 허용
+  if (parts.length === 2) {
+    const f = parts[0] as AllowedFolder;
+    const uid = parts[1];
+
+    if (f !== "collecting" && f !== "collected") {
+      throw new Error(`uploadToMomongaBucket: invalid folder "${v}"`);
+    }
+    if (uid !== userId) {
+      throw new Error(`uploadToMomongaBucket: unsafe folder "${v}" (uid mismatch)`);
+    }
+    return f;
   }
 
-  const [folder, uid] = parts;
-
-  if (!allowed.includes(folder as AllowedFolder)) {
-    throw new Error(`uploadToMomongaBucket: invalid folder "${folder}" (from "${raw}")`);
-  }
-  if (uid !== currentUserId) {
-    throw new Error(
-      `uploadToMomongaBucket: unsafe folder "${raw}" (uid mismatch)`
-    );
-  }
-
-  // 여기서 folder만 반환 (path는 항상 우리가 `${folder}/${currentUserId}/...`로 만듦)
-  return folder as AllowedFolder;
+  // 그 외 전부 차단
+  throw new Error(
+    `uploadToMomongaBucket: folder must be "collecting" or "collected" (optionally "/<uid>"). got: "${v}"`
+  );
 }
 
 export function getStoragePathFromPublicUrl(url: string): string | null {
@@ -77,18 +78,25 @@ export function getStoragePathFromPublicUrl(url: string): string | null {
   return path || null;
 }
 
+/**
+ * ✅ 이 public URL이 "내가 삭제 가능한 형태인지" 빠르게 판별
+ * - 우리가 원하는 형태: {folder}/{user_id}/{filename}
+ */
 export function canDeletePublicUrlAsOwner(url: string, userId: string): boolean {
   const path = getStoragePathFromPublicUrl(url);
   if (!path) return false;
 
-  const parts = path.split("/");
+  const parts = path.split("/"); // [folder, user_id, filename...]
   if (parts.length < 3) return false;
   if (parts[1] !== userId) return false;
+
+  // folder도 체크(방어)
+  if (parts[0] !== "collecting" && parts[0] !== "collected") return false;
 
   return true;
 }
 
-// 오버로드: (file, folder) 또는 ({file, folder, upsert})
+// ✅ 오버로드: (file, folder) 또는 ({file, folder, upsert})
 export async function uploadToMomongaBucket(file: File, folder: string): Promise<string>;
 export async function uploadToMomongaBucket(params: {
   file: File;
@@ -104,15 +112,6 @@ export async function uploadToMomongaBucket(
   const rawFolder = a instanceof File ? (b ?? "") : a.folder;
   const upsert = a instanceof File ? true : (a.upsert ?? true);
 
-  // ✅ 업로드 기본 방어: 타입/용량 제한
-  if (!inputFile.type.startsWith("image/")) {
-    throw new Error("Images only");
-  }
-  const MAX_BYTES = 5 * 1024 * 1024; // 5MB
-  if (inputFile.size > MAX_BYTES) {
-    throw new Error("Max 5MB");
-  }
-
   // ✅ 업로드는 인증 필요
   const {
     data: { user },
@@ -120,10 +119,16 @@ export async function uploadToMomongaBucket(
   } = await supabase.auth.getUser();
   if (authError || !user) throw new Error("Authentication required for upload");
 
-  // ✅ 여기서 folder 정규화 (구버전 "collecting/<uid>"도 허용)
-  const folder = normalizeFolderOrThrow(rawFolder, user.id);
+  // ✅ folder 정규화 (여기서 collecting/<uid> 같은 실수도 흡수/차단)
+  const folder = normalizeFolder(rawFolder, user.id);
 
-  // ✅ 업로드 전 리사이즈 (항상 jpeg로)
+  // ✅ 타입/용량 제한
+  if (!inputFile.type.startsWith("image/")) throw new Error("Images only");
+
+  const MAX_BYTES = 5 * 1024 * 1024; // 5MB
+  if (inputFile.size > MAX_BYTES) throw new Error("Max 5MB");
+
+  // ✅ 리사이즈 (jpeg로 통일)
   const file = await resizeImageFile(inputFile, {
     maxSize: 1600,
     quality: 0.85,
@@ -132,7 +137,7 @@ export async function uploadToMomongaBucket(
 
   const ext = getExtFromFileOrType(file);
 
-  // ✅ 핵심: {folder}/{user_id}/{filename}
+  // ✅ 핵심 경로: {folder}/{user_id}/{filename}
   const path = `${folder}/${user.id}/${Date.now()}_${randomId()}.${ext}`;
 
   const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
@@ -145,6 +150,10 @@ export async function uploadToMomongaBucket(
   return getPublicUrl(path);
 }
 
+/**
+ * ✅ public URL -> storage path로 변환해서 삭제
+ * 예) https://xxx.supabase.co/storage/v1/object/public/momonga/collected/{user_id}/...
+ */
 export async function removeByPublicUrl(url: string) {
   if (!url) return;
 
@@ -154,19 +163,12 @@ export async function removeByPublicUrl(url: string) {
   } = await supabase.auth.getUser();
   if (authError || !user) throw new Error("Authentication required to delete files");
 
-  const marker = `/storage/v1/object/public/${BUCKET}/`;
-  const idx = url.indexOf(marker);
-  if (idx < 0) return;
-
-  const path = url.slice(idx + marker.length);
+  const path = getStoragePathFromPublicUrl(url);
   if (!path) return;
 
-  // 1차 소유권 검증: {folder}/{user_id}/... 구조 확인
   const parts = path.split("/");
-  if (parts.length < 2) throw new Error("Invalid storage path");
-  if (parts[1] !== user.id) {
-    throw new Error("Unauthorized: you can only delete your own files");
-  }
+  if (parts.length < 3) throw new Error("Invalid storage path");
+  if (parts[1] !== user.id) throw new Error("Unauthorized: you can only delete your own files");
 
   const { error } = await supabase.storage.from(BUCKET).remove([path]);
   if (error) throw error;
