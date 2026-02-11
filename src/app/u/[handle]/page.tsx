@@ -35,6 +35,14 @@ function safeTab(v?: string): ViewTab {
   return "all";
 }
 
+/**
+ * ✅ 공개 페이지는 "서버"에서 실행되고, 유저 세션 쿠키도 필요함.
+ * RLS로:
+ * - 공개(is_public=true) 프로필/컬렉션은 비로그인도 읽힘
+ * - 비공개면 본인(auth.uid=id)일 때만 읽힘
+ *
+ * 그래서 persistSession=false 유지 + anon 키로 OK.
+ */
 function getSupabaseServer() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -55,17 +63,33 @@ export default async function PublicUserPage(props: {
 
   const supabase = getSupabaseServer();
 
-  /* 1) 프로필 */
-  const { data: profile } = await supabase
+  // =========================
+  // 1) 프로필
+  // =========================
+  // ✅ 여기서 "is_public=false면 notFound"로 막아두면,
+  // RLS로 본인에게만 열어주고 싶은 "비공개 미리보기"가 불가능해짐.
+  // 그래서 profile 자체를 먼저 가져오고,
+  // - 공개면 누구나 OK
+  // - 비공개면: (RLS에서) 본인이 아니면 애초에 profile이 안 내려옴 => notFound
+  const { data: profile, error: profileErr } = await supabase
     .from("profiles")
     .select("id, handle, display_name, avatar_url, is_public")
     .eq("handle", handle)
     .maybeSingle<ProfileRow>();
 
-  if (!profile || !profile.is_public) notFound();
+  if (profileErr) {
+    // 보안상 정보 노출 줄이기: 그냥 notFound 처리
+    notFound();
+  }
+  if (!profile) notFound();
 
-  /* 2) 컬렉션 */
-  const { data: rows } = await supabase
+  // =========================
+  // 2) 컬렉션
+  // =========================
+  // ✅ 읽기 권한은 RLS가 처리:
+  // - 공개 프로필이면 누구나 select 가능
+  // - 비공개면 본인만 select 가능
+  const { data: rows, error: rowsErr } = await supabase
     .from("collections")
     .select(
       "id, owner_id, title, image, link, original_price, used_price, status, my_image, my_memo, created_at"
@@ -74,13 +98,19 @@ export default async function PublicUserPage(props: {
     .order("created_at", { ascending: false })
     .returns<CollectionRow[]>();
 
-  const all = rows ?? [];
+  // 비공개인데 남이 접근하면 보통 rowsErr 혹은 rows가 null/[]로 떨어질 수 있음.
+  // 프로필이 이미 내려왔다는 건 (RLS 기준) 접근 가능한 상태라서,
+  // 여기서는 실패해도 "빈 배열"로 안전 처리.
+  const all = rowsErr ? [] : rows ?? [];
+
   const filtered = tab === "all" ? all : all.filter((r) => r.status === tab);
 
   const collectingCount = all.filter((r) => r.status === "collecting").length;
   const collectedCount = all.filter((r) => r.status === "collected").length;
 
-  /* ===== 금액 합계 ===== */
+  // =========================
+  // 3) 통계
+  // =========================
   const sum = (xs: CollectionRow[]) =>
     xs.reduce((acc, r) => acc + (r.original_price ?? 0), 0);
 
@@ -88,7 +118,7 @@ export default async function PublicUserPage(props: {
   const collectingTotal = sum(all.filter((r) => r.status === "collecting"));
   const total = collectedTotal + collectingTotal;
 
-  /* ===== 월별 누적 (실선/점선) ===== */
+  // 월별 누적 (실선/점선)
   const monthMap = new Map<string, { collected: number; collecting: number }>();
 
   for (const r of all) {
@@ -135,6 +165,19 @@ export default async function PublicUserPage(props: {
     "dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10 dark:hover:border-white/20 dark:hover:text-white";
 
   const pill = `${pillBase} ${pillLight} ${pillDark}`;
+
+  // ✅ 비공개 미리보기일 때(본인만 들어옴) 배지 노출
+  const privateBadge = !profile.is_public ? (
+    <span
+      className={[
+        "ml-2 inline-flex items-center rounded-full border px-2.5 py-1 text-xs",
+        "border-amber-500/25 bg-amber-500/10 text-amber-700",
+        "dark:border-amber-300/20 dark:bg-amber-300/10 dark:text-amber-200",
+      ].join(" ")}
+    >
+      비공개(본인만 보임)
+    </span>
+  ) : null;
 
   return (
     <main className="relative">
@@ -189,11 +232,13 @@ export default async function PublicUserPage(props: {
             </div>
 
             <div>
-              <h1 className="text-2xl font-semibold text-zinc-900 dark:text-white">
-                {profile.display_name ?? profile.handle}
+              <h1 className="flex items-center gap-2 text-2xl font-semibold text-zinc-900 dark:text-white">
+                <span>{profile.display_name ?? profile.handle}</span>
+                {privateBadge}
               </h1>
               <p className="text-sm text-zinc-600 dark:text-white/60">
-                @{profile.handle} · 수집중 {collectingCount} · 수집완료 {collectedCount}
+                @{profile.handle} · 수집중 {collectingCount} · 수집완료{" "}
+                {collectedCount}
               </p>
             </div>
           </div>
@@ -238,12 +283,17 @@ export default async function PublicUserPage(props: {
                     "
                   />
                   <span className="relative">
-                    {t === "all" ? "전체" : t === "collecting" ? "수집중" : "수집완료"}
+                    {t === "all"
+                      ? "전체"
+                      : t === "collecting"
+                      ? "수집중"
+                      : "수집완료"}
                   </span>
                 </Link>
               );
             })}
 
+            {/* ✅ OwnerManageButton 내부에서 본인 여부 판정(현재 로그인 uid === ownerId)해서 버튼 숨기는 구조면 그대로 OK */}
             <OwnerManageButton ownerId={profile.id} />
           </div>
         </div>

@@ -9,7 +9,11 @@ import {
   updateCollectItem,
   deleteCollectItem,
 } from "@/lib/collectionService";
-import { uploadToMomongaBucket, removeByPublicUrl } from "@/lib/storageService";
+import {
+  uploadToMomongaBucket,
+  removeByPublicUrl,
+  canDeletePublicUrlAsOwner,
+} from "@/lib/storageService";
 import { supabase } from "@/lib/supabase/client";
 import { hashFile } from "@/lib/fileHash";
 
@@ -29,11 +33,7 @@ function parsePrice(input: string) {
 
 function isProbablyImageUrl(url: string) {
   const u = url.trim().toLowerCase();
-  return (
-    u.startsWith("http://") ||
-    u.startsWith("https://") ||
-    u.startsWith("data:image/")
-  );
+  return u.startsWith("http://") || u.startsWith("https://") || u.startsWith("data:image/");
 }
 
 function baseName(fileName: string) {
@@ -88,8 +88,7 @@ export default function Collection() {
 
   // ✅ 수집완료에서 "내 사진/메모" 수정용 상태
   const [editMyMemo, setEditMyMemo] = useState("");
-  const [editMyImageMode, setEditMyImageMode] =
-    useState<"keep" | "url" | "upload">("keep");
+  const [editMyImageMode, setEditMyImageMode] = useState<"keep" | "url" | "upload">("keep");
   const [editMyImageUrl, setEditMyImageUrl] = useState("");
   const [editMyImageFile, setEditMyImageFile] = useState<File | null>(null);
   const [myDeleteRequested, setMyDeleteRequested] = useState(false);
@@ -135,9 +134,29 @@ export default function Collection() {
   const [moving, setMoving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // ✅ 로컬 업로드 미리보기용 objectURL
+  const [productPreviewObjUrl, setProductPreviewObjUrl] = useState<string | null>(null);
+  const [myPreviewObjUrl, setMyPreviewObjUrl] = useState<string | null>(null);
+
   // ✅ 레이스 방지용 request id
   const reqIdRef = useRef(0);
   const aliveRef = useRef(true);
+
+  // ✅ (B) 수집완료 검색/필터/정렬
+  const [qCollected, setQCollected] = useState("");
+  const [fMyPhoto, setFMyPhoto] = useState<"all" | "with" | "without">("all");
+  const [fMemo, setFMemo] = useState<"all" | "with" | "without">("all");
+  const [fLink, setFLink] = useState<"all" | "with" | "without">("all");
+  const [sortCollected, setSortCollected] = useState<
+    | "newest"
+    | "oldest"
+    | "titleAsc"
+    | "titleDesc"
+    | "origHigh"
+    | "origLow"
+    | "usedHigh"
+    | "usedLow"
+  >("newest");
 
   // DB -> UI 변환 (snake_case -> camelCase)
   const mapRowToItem = useCallback((r: any): CollectItem => {
@@ -154,22 +173,24 @@ export default function Collection() {
     };
   }, []);
 
-  const refreshFromDb = useCallback(async (uid: string) => {
-    const rows = await fetchCollection(uid);
+  const refreshFromDb = useCallback(
+    async (uid: string) => {
+      const rows = await fetchCollection(uid);
 
-    const nextCollecting = rows
-      .filter((r: any) => r.status === "collecting")
-      .map(mapRowToItem);
+      const nextCollecting = rows.filter((r: any) => r.status === "collecting").map(mapRowToItem);
 
-    const nextCollected = rows
-      .filter((r: any) => r.status === "collected")
-      .map(mapRowToItem);
+      const nextCollected = rows.filter((r: any) => r.status === "collected").map(mapRowToItem);
 
-    setCollecting(nextCollecting);
-    setCollected(nextCollected);
-  }, [mapRowToItem]);
+      setCollecting(nextCollecting);
+      setCollected(nextCollected);
+    },
+    [mapRowToItem]
+  );
 
   const quickHashSetRef = useRef<Set<string>>(new Set());
+
+  const canDeleteMyImage =
+    !!(userId && open?.myImage && canDeletePublicUrlAsOwner(open.myImage, userId));
 
   const load = useCallback(async () => {
     const myReqId = ++reqIdRef.current;
@@ -228,10 +249,7 @@ export default function Collection() {
 
       setLoading(false);
     }
-  
   }, [refreshFromDb]);
-
-
 
   // ✅ 최초 진입 + auth 변화 시 load()로 통일
   useEffect(() => {
@@ -239,7 +257,6 @@ export default function Collection() {
     load();
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event) => {
-      // SIGNED_IN / SIGNED_OUT / TOKEN_REFRESHED 등 무엇이든 load로 재정렬
       load();
     });
 
@@ -262,10 +279,108 @@ export default function Collection() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const list = useMemo(
-    () => (view === "collecting" ? collecting : collected),
-    [view, collecting, collected]
-  );
+  // ✅ 상품 이미지 업로드 선택 시: objectURL 만들어서 미리보기
+  useEffect(() => {
+    if (editImageMode !== "upload" || !editImageFile) {
+      if (productPreviewObjUrl) URL.revokeObjectURL(productPreviewObjUrl);
+      setProductPreviewObjUrl(null);
+      return;
+    }
+
+    const url = URL.createObjectURL(editImageFile);
+    if (productPreviewObjUrl) URL.revokeObjectURL(productPreviewObjUrl);
+    setProductPreviewObjUrl(url);
+
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [editImageMode, editImageFile]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ✅ 내 사진 업로드 선택 시: objectURL 만들어서 미리보기
+  useEffect(() => {
+    if (editMyImageMode !== "upload" || !editMyImageFile || myDeleteRequested) {
+      if (myPreviewObjUrl) URL.revokeObjectURL(myPreviewObjUrl);
+      setMyPreviewObjUrl(null);
+      return;
+    }
+
+    const url = URL.createObjectURL(editMyImageFile);
+    if (myPreviewObjUrl) URL.revokeObjectURL(myPreviewObjUrl);
+    setMyPreviewObjUrl(url);
+
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [editMyImageMode, editMyImageFile, myDeleteRequested]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ✅ (B) 수집완료 탭에서만 검색/필터/정렬 적용된 리스트
+  const displayList = useMemo(() => {
+    const base = view === "collecting" ? collecting : collected;
+    if (view !== "collected") return base;
+
+    const q = qCollected.trim().toLowerCase();
+
+    let arr = base.filter((it) => {
+      if (q) {
+        const hay = `${it.title ?? ""} ${it.myMemo ?? ""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+
+      if (fMyPhoto === "with" && !it.myImage) return false;
+      if (fMyPhoto === "without" && !!it.myImage) return false;
+
+      const hasMemo = !!(it.myMemo && it.myMemo.trim());
+      if (fMemo === "with" && !hasMemo) return false;
+      if (fMemo === "without" && hasMemo) return false;
+
+      const hasLink = !!(it.link && it.link.trim());
+      if (fLink === "with" && !hasLink) return false;
+      if (fLink === "without" && hasLink) return false;
+
+      return true;
+    });
+
+    const getOrig = (it: CollectItem) => it.originalPrice ?? -1;
+    const getUsed = (it: CollectItem) => it.usedPrice ?? -1;
+
+    if (sortCollected === "oldest") {
+      return [...arr].reverse(); // base가 최신순이라면 reverse가 오래된순
+    }
+
+    const copy = [...arr];
+    copy.sort((a, b) => {
+      const at = (a.title ?? "").toLowerCase();
+      const bt = (b.title ?? "").toLowerCase();
+
+      switch (sortCollected) {
+        case "titleAsc":
+          return at.localeCompare(bt);
+        case "titleDesc":
+          return bt.localeCompare(at);
+        case "origHigh":
+          return getOrig(b) - getOrig(a);
+        case "origLow":
+          return getOrig(a) - getOrig(b);
+        case "usedHigh":
+          return getUsed(b) - getUsed(a);
+        case "usedLow":
+          return getUsed(a) - getUsed(b);
+        case "newest":
+        default:
+          return 0; // 현재 순서 유지(대개 최신순)
+      }
+    });
+    return copy;
+  }, [
+    view,
+    collecting,
+    collected,
+    qCollected,
+    fMyPhoto,
+    fMemo,
+    fLink,
+    sortCollected,
+  ]);
 
   function resetAddForm() {
     setAddTitle("");
@@ -284,11 +399,17 @@ export default function Collection() {
     setQuickPrefix("");
     setQuickSuffix("");
     setQuickNumbering(true);
-
     quickHashSetRef.current.clear();
   }
 
   function openDetail(item: CollectItem) {
+    console.log("[openDetail] userId(state):", userId);
+    console.log("[openDetail] item.myImage:", item.myImage);
+    console.log(
+      "[openDetail] canDeleteMyImage(calc):",
+      !!(userId && item.myImage && canDeletePublicUrlAsOwner(item.myImage, userId))
+    );
+
     setOpen(item);
     setEditMode(false);
 
@@ -296,14 +417,10 @@ export default function Collection() {
     setEditTitle(item.title ?? "");
     setEditLink(item.link ?? "");
     setEditOriginal(
-      item.originalPrice === null || item.originalPrice === undefined
-        ? ""
-        : String(item.originalPrice)
+      item.originalPrice === null || item.originalPrice === undefined ? "" : String(item.originalPrice)
     );
     setEditUsed(
-      item.usedPrice === null || item.usedPrice === undefined
-        ? ""
-        : String(item.usedPrice)
+      item.usedPrice === null || item.usedPrice === undefined ? "" : String(item.usedPrice)
     );
 
     setEditImageMode("url");
@@ -320,7 +437,46 @@ export default function Collection() {
     setEditMyImageUrl(item.myImage ?? "");
     setEditMyImageFile(null);
     setMyDeleteRequested(false);
+
+    // ✅ 프리뷰 URL 정리(안전)
+    if (productPreviewObjUrl) {
+      URL.revokeObjectURL(productPreviewObjUrl);
+      setProductPreviewObjUrl(null);
+    }
+    if (myPreviewObjUrl) {
+      URL.revokeObjectURL(myPreviewObjUrl);
+      setMyPreviewObjUrl(null);
+    }
   }
+
+  // ✅ 상세 모달 미리보기 src 계산
+  const productPreviewSrc = useMemo(() => {
+    if (!open) return "";
+
+    if (!editMode) return open.image ?? "";
+
+    if (editImageMode === "url") {
+      return editImageUrl.trim() || open.image || "";
+    }
+
+    return productPreviewObjUrl || open.image || "";
+  }, [open, editMode, editImageMode, editImageUrl, productPreviewObjUrl]);
+
+  const myPreviewSrc = useMemo(() => {
+    if (!open) return "";
+
+    if (open.status !== "collected") return open.myImage ?? "";
+
+    if (!editMode) return open.myImage ?? "";
+
+    if (myDeleteRequested) return "";
+
+    if (editMyImageMode === "keep") return open.myImage ?? "";
+
+    if (editMyImageMode === "url") return editMyImageUrl.trim() || "";
+
+    return myPreviewObjUrl || open.myImage || "";
+  }, [open, editMode, myDeleteRequested, editMyImageMode, editMyImageUrl, myPreviewObjUrl]);
 
   async function submitAddCollecting() {
     if (savingAdd) return;
@@ -352,7 +508,7 @@ export default function Collection() {
           alert("이미지 파일을 선택해줘.");
           return;
         }
-        image = await uploadToMomongaBucket(addImageFile, `collecting/${userId}`);
+        image = await uploadToMomongaBucket(addImageFile, "collecting");
       }
 
       await insertCollectItem(userId, {
@@ -365,7 +521,6 @@ export default function Collection() {
         status: "collecting",
       });
 
-      // ✅ 여기서도 load()로 통일하면 꼬임이 줄어든다
       await load();
 
       setAddOpen(false);
@@ -373,9 +528,7 @@ export default function Collection() {
     } catch (e: any) {
       console.error(e);
       const msg =
-        e?.message ||
-        e?.error_description ||
-        (typeof e === "string" ? e : JSON.stringify(e));
+        e?.message || e?.error_description || (typeof e === "string" ? e : JSON.stringify(e));
       alert(`저장 실패: ${msg}`);
     } finally {
       setSavingAdd(false);
@@ -392,9 +545,7 @@ export default function Collection() {
         return;
       }
 
-      const myImage = myFile
-        ? await uploadToMomongaBucket(myFile, `collected/${userId}`)
-        : null;
+      const myImage = myFile ? await uploadToMomongaBucket(myFile, "collected") : null;
 
       await updateCollectItem(userId, item.id, {
         status: "collected",
@@ -438,7 +589,10 @@ export default function Collection() {
           alert("업로드할 파일을 선택해줘.");
           return;
         }
-        image = await uploadToMomongaBucket(editImageFile, `${open.status}/${userId}`);
+        const folder: "collecting" | "collected" =
+          open.status === "collected" ? "collected" : "collecting";
+
+        image = await uploadToMomongaBucket(editImageFile, folder);
       }
 
       // =========================
@@ -452,9 +606,11 @@ export default function Collection() {
 
         if (myDeleteRequested) {
           if (open.myImage) {
-            try {
+            if (!canDeleteMyImage) {
+              alert("예전 업로드 파일은 삭제가 아니라 '업로드(교체)'로 정리돼요.");
+            } else {
               await removeByPublicUrl(open.myImage);
-            } catch {}
+            }
           }
           myImage = null;
         } else if (editMyImageMode === "keep") {
@@ -473,7 +629,7 @@ export default function Collection() {
             } catch {}
           }
 
-          myImage = await uploadToMomongaBucket(editMyImageFile, `collected/${userId}`);
+          myImage = await uploadToMomongaBucket(editMyImageFile, "collected");
         }
       }
 
@@ -557,7 +713,7 @@ export default function Collection() {
     for (const f of onlyImages) {
       const h = await hashFile(f);
 
-      if (quickHashSetRef.current.has(h)) continue; // ✅ 중복 스킵
+      if (quickHashSetRef.current.has(h)) continue;
       quickHashSetRef.current.add(h);
 
       next.push({
@@ -572,7 +728,6 @@ export default function Collection() {
     if (next.length === 0) return;
     setQuickEntries((prev) => [...prev, ...next]);
   }
-
 
   async function onQuickFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -610,7 +765,7 @@ export default function Collection() {
       const target = prev.find((x) => x.id === id);
       if (target) {
         URL.revokeObjectURL(target.previewUrl);
-        quickHashSetRef.current.delete(target.hash); // ✅ 추가
+        quickHashSetRef.current.delete(target.hash);
       }
       return prev.filter((x) => x.id !== id);
     });
@@ -632,7 +787,7 @@ export default function Collection() {
       setQuickUploading(true);
 
       for (const entry of quickEntries) {
-        const myUrl = await uploadToMomongaBucket(entry.file, `collected/${userId}`);
+        const myUrl = await uploadToMomongaBucket(entry.file, "collected");
 
         await insertCollectItem(userId, {
           id: crypto.randomUUID(),
@@ -655,9 +810,7 @@ export default function Collection() {
     } catch (e: any) {
       console.error(e);
       const msg =
-        e?.message ||
-        e?.error_description ||
-        (typeof e === "string" ? e : JSON.stringify(e));
+        e?.message || e?.error_description || (typeof e === "string" ? e : JSON.stringify(e));
       alert(`빠른추가 실패: ${msg}`);
     } finally {
       setQuickUploading(false);
@@ -732,9 +885,7 @@ export default function Collection() {
       {needLogin && (
         <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5 text-white/80">
           <div className="text-sm">로그인하면 내 수집 데이터를 불러오고 저장할 수 있어.</div>
-          <div className="mt-2 text-xs text-white/60">
-            로그인 후 다시 이 탭을 열면 자동으로 불러와져.
-          </div>
+          <div className="mt-2 text-xs text-white/60">로그인 후 다시 이 탭을 열면 자동으로 불러와져.</div>
 
           <div className="mt-4 flex gap-2">
             <a
@@ -779,17 +930,86 @@ export default function Collection() {
             </div>
           )}
 
+          {/* ✅ (B) 수집완료 탭: 검색/필터/정렬 UI */}
+          {view === "collected" && (
+            <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  value={qCollected}
+                  onChange={(e) => setQCollected(e.target.value)}
+                  placeholder="검색: 제목/메모"
+                  className="w-64 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 outline-none placeholder:text-white/30"
+                />
+
+                <select
+                  value={fMyPhoto}
+                  onChange={(e) => setFMyPhoto(e.target.value as any)}
+                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 outline-none"
+                >
+                  <option value="all">내사진: 전체</option>
+                  <option value="with">내사진: 있음</option>
+                  <option value="without">내사진: 없음</option>
+                </select>
+
+                <select
+                  value={fMemo}
+                  onChange={(e) => setFMemo(e.target.value as any)}
+                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 outline-none"
+                >
+                  <option value="all">메모: 전체</option>
+                  <option value="with">메모: 있음</option>
+                  <option value="without">메모: 없음</option>
+                </select>
+
+                <select
+                  value={fLink}
+                  onChange={(e) => setFLink(e.target.value as any)}
+                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 outline-none"
+                >
+                  <option value="all">링크: 전체</option>
+                  <option value="with">링크: 있음</option>
+                  <option value="without">링크: 없음</option>
+                </select>
+
+                <select
+                  value={sortCollected}
+                  onChange={(e) => setSortCollected(e.target.value as any)}
+                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 outline-none"
+                >
+                  <option value="newest">정렬: 최신(기본)</option>
+                  <option value="oldest">정렬: 오래된</option>
+                  <option value="titleAsc">정렬: 제목 A→Z</option>
+                  <option value="titleDesc">정렬: 제목 Z→A</option>
+                  <option value="origHigh">정렬: 원가 높은순</option>
+                  <option value="origLow">정렬: 원가 낮은순</option>
+                  <option value="usedHigh">정렬: 중고가 높은순</option>
+                  <option value="usedLow">정렬: 중고가 낮은순</option>
+                </select>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQCollected("");
+                    setFMyPhoto("all");
+                    setFMemo("all");
+                    setFLink("all");
+                    setSortCollected("newest");
+                  }}
+                  className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-white hover:bg-white/15"
+                >
+                  초기화
+                </button>
+
+                <div className="ml-auto text-xs text-white/50">{displayList.length}개 표시됨</div>
+              </div>
+            </div>
+          )}
+
           <div className="mt-6 grid gap-6 md:grid-cols-3">
-            {list.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => openDetail(item)}
-                className="text-left"
-              >
+            {displayList.map((item) => (
+              <button key={item.id} type="button" onClick={() => openDetail(item)} className="text-left">
                 <GlassCard className="group overflow-hidden p-0">
                   <div className="relative h-[220px] w-full overflow-hidden rounded-2xl">
-                    {/* 카드 썸네일: 수집완료면 2분할(상품/내사진) */}
                     {item.status === "collected" ? (
                       <div className="grid h-full w-full grid-cols-2">
                         {item.image ? (
@@ -819,7 +1039,7 @@ export default function Collection() {
                     ) : (
                       <img
                         src={item.image ?? ""}
-                        alt={item.title}
+                        alt={item.title ?? ""}
                         className="block h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.04]"
                       />
                     )}
@@ -872,8 +1092,12 @@ export default function Collection() {
             <GlassCard className="overflow-hidden p-0">
               <div className="grid md:grid-cols-2">
                 <div className="relative h-[360px] w-full overflow-hidden">
-                  {open.image ? (
-                    <img src={open.image} alt={open.title} className="block h-full w-full object-cover" />
+                  {productPreviewSrc ? (
+                    <img
+                      src={productPreviewSrc}
+                      alt={open.title ?? "상품 이미지"}
+                      className="block h-full w-full object-cover"
+                    />
                   ) : (
                     <div className="grid h-full place-items-center bg-white/[0.03] text-sm text-white/60">
                       상품 이미지 없음
@@ -907,10 +1131,16 @@ export default function Collection() {
 
                 <div className="relative h-[360px] w-full overflow-hidden bg-white/[0.02]">
                   {open.status === "collected" ? (
-                    open.myImage ? (
-                      <img src={open.myImage} alt="내 수집품 사진" className="block h-full w-full object-cover" />
+                    myPreviewSrc ? (
+                      <img
+                        src={myPreviewSrc}
+                        alt="내 수집품 사진"
+                        className="block h-full w-full object-cover"
+                      />
                     ) : (
-                      <div className="grid h-full place-items-center p-8 text-white/60">내 사진이 아직 없어.</div>
+                      <div className="grid h-full place-items-center p-8 text-white/60">
+                        내 사진이 아직 없어.
+                      </div>
                     )
                   ) : (
                     <div className="grid h-full place-items-center p-8 text-white/60">
@@ -1127,18 +1357,30 @@ export default function Collection() {
                             <button
                               type="button"
                               onClick={() => {
+                                if (!canDeleteMyImage) {
+                                  alert("예전 업로드 파일은 삭제가 아니라 '업로드(교체)'로 정리돼요.");
+                                  return;
+                                }
                                 setMyDeleteRequested(true);
                                 setEditMyImageMode("keep");
                                 setEditMyImageFile(null);
                               }}
+                              disabled={!canDeleteMyImage}
                               className={`rounded-full border px-4 py-2 text-sm ${
                                 myDeleteRequested
                                   ? "border-red-400/30 bg-red-500/15 text-red-50"
                                   : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
-                              }`}
+                              } ${!canDeleteMyImage ? "opacity-50 cursor-not-allowed" : ""}`}
                             >
                               내 사진 삭제
                             </button>
+
+                            {open?.myImage && !canDeleteMyImage && (
+                              <div className="mt-2 text-xs text-white/50">
+                                ℹ️ 예전 업로드 파일이라 삭제 대신{" "}
+                                <b className="text-white/80">업로드(교체)</b>로 정리해줘.
+                              </div>
+                            )}
                           </div>
 
                           {!myDeleteRequested && editMyImageMode === "url" && (
@@ -1250,6 +1492,7 @@ export default function Collection() {
         </div>
       )}
 
+      {/* ===== 아래 addOpen / quickOpen 모달은 너가 붙인 그대로 (변경 없음) ===== */}
       {/* 수집중 추가 모달 */}
       {addOpen && !needLogin && (
         <div className="fixed inset-0 z-50 grid place-items-center px-4">
@@ -1469,9 +1712,7 @@ export default function Collection() {
                     onDrop={async (e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      const files = Array.from(e.dataTransfer.files || []).filter((f) =>
-                        f.type.startsWith("image/")
-                      );
+                      const files = Array.from(e.dataTransfer.files || []).filter((f) => f.type.startsWith("image/"));
                       if (files.length) await addQuickFiles(files);
                     }}
                   >
