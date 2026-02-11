@@ -589,7 +589,10 @@ export default function Collection() {
           alert("업로드할 파일을 선택해줘.");
           return;
         }
-        image = await uploadToMomongaBucket(editImageFile, open.status);
+        const folder: "collecting" | "collected" =
+          open.status === "collected" ? "collected" : "collecting";
+
+        image = await uploadToMomongaBucket(editImageFile, folder);
       }
 
       // =========================
