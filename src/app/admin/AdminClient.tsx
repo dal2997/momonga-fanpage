@@ -1,157 +1,307 @@
+// src/app/admin/AdminClient.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
-type Row = {
+type ProfileRow = {
   id: string;
-  handle: string | null;
+  handle: string;
   display_name: string | null;
+  avatar_url: string | null;
   is_public: boolean;
-  created_at: string;
   is_admin: boolean;
   is_approved: boolean;
   is_banned: boolean;
-  approved_at: string | null;
-  banned_at: string | null;
   ban_reason: string | null;
+  approved_at: string | null;
 };
 
 export default function AdminClient() {
-  const [loading, setLoading] = useState(true);
-  const [rows, setRows] = useState<Row[]>([]);
+  const router = useRouter();
+
+  const [me, setMe] = useState<ProfileRow | null>(null);
+  const [loadingMe, setLoadingMe] = useState(true);
+
+  const [rows, setRows] = useState<ProfileRow[]>([]);
+  const [loadingList, setLoadingList] = useState(true);
+
+  const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  async function reload() {
-    setLoading(true);
+  async function loadMeAndGuard() {
+    setLoadingMe(true);
     setErr(null);
 
-    const { data, error } = await supabase.rpc("admin_list_profiles");
-    if (error) {
-      setErr(error.message);
-      setRows([]);
-      setLoading(false);
+    const { data: u, error: ue } = await supabase.auth.getUser();
+    if (ue) {
+      setErr(ue.message);
+      setLoadingMe(false);
       return;
     }
 
-    setRows((data ?? []) as Row[]);
-    setLoading(false);
+    const uid = u.user?.id;
+    if (!uid) {
+      router.push("/login?next=/admin");
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select(
+        "id,handle,display_name,avatar_url,is_public,is_admin,is_approved,is_banned,ban_reason,approved_at"
+      )
+      .eq("id", uid)
+      .maybeSingle();
+
+    if (error) {
+      setErr(error.message);
+      setLoadingMe(false);
+      return;
+    }
+
+    if (!data?.is_admin) {
+      router.replace("/");
+      return;
+    }
+
+    setMe(data as ProfileRow);
+    setLoadingMe(false);
+  }
+
+  async function loadPending() {
+    setLoadingList(true);
+    setErr(null);
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select(
+        "id,handle,display_name,avatar_url,is_public,is_admin,is_approved,is_banned,ban_reason,approved_at"
+      )
+      .eq("is_approved", false)
+      .eq("is_banned", false)
+      .order("handle", { ascending: true });
+
+    if (error) {
+      setErr(error.message);
+      setLoadingList(false);
+      return;
+    }
+
+    setRows((data as ProfileRow[]) ?? []);
+    setLoadingList(false);
   }
 
   useEffect(() => {
-    reload();
+    (async () => {
+      await loadMeAndGuard();
+      await loadPending();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function approve(id: string, v: boolean) {
-    const { error } = await supabase.rpc("admin_set_approval", {
-      target_id: id,
-      approve: v,
-    });
-    if (error) return alert(error.message);
-    await reload();
+  async function approveUser(userId: string) {
+    setMsg(null);
+    setErr(null);
+
+    // 낙관적 UI
+    setRows((prev) => prev.filter((r) => r.id !== userId));
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        is_approved: true,
+        approved_at: new Date().toISOString(),
+      })
+      .eq("id", userId);
+
+    if (error) {
+      setErr(error.message);
+      await loadPending();
+      return;
+    }
+
+    setMsg("승인 완료 ✅");
   }
 
-  async function ban(id: string, v: boolean) {
-    const reason = v ? prompt("밴 사유(선택)") ?? null : null;
-    const { error } = await supabase.rpc("admin_set_ban", {
-      target_id: id,
-      ban: v,
-      reason,
-    });
-    if (error) return alert(error.message);
-    await reload();
+  async function banUser(userId: string) {
+    const reason = window.prompt("밴 사유(선택)");
+    setMsg(null);
+    setErr(null);
+
+    setRows((prev) => prev.filter((r) => r.id !== userId));
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        is_banned: true,
+        ban_reason: (reason ?? "").trim() || null,
+      })
+      .eq("id", userId);
+
+    if (error) {
+      setErr(error.message);
+      await loadPending();
+      return;
+    }
+
+    setMsg("밴 처리 완료 ✅");
   }
 
-  if (loading) return <div className="p-6 text-sm">불러오는 중…</div>;
-  if (err)
-    return (
-      <div className="p-6 space-y-3">
-        <div className="text-sm text-red-400">에러: {err}</div>
-        <div className="text-xs text-white/50">
-          admin 계정이 아니면 여기서 막히는 게 정상임.
-        </div>
-      </div>
-    );
+  async function issueCode(userId: string) {
+    setMsg(null);
+    setErr(null);
+
+    try {
+      const res = await fetch("/api/admin/approval", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "issue", userId }),
+      });
+
+      const j = await res.json();
+      if (!j?.ok) throw new Error(j?.error ?? "issue failed");
+
+      await navigator.clipboard.writeText(j.code);
+      setMsg(`승인코드 발급됨 (클립보드 복사): ${j.code}`);
+    } catch (e: any) {
+      setErr(e?.message ?? "issue failed");
+    }
+  }
+
+  async function sendCodeEmail(userId: string) {
+    setMsg(null);
+    setErr(null);
+
+    try {
+      const res = await fetch("/api/admin/approval", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "send", userId }),
+      });
+
+      const j = await res.json();
+      if (!j?.ok) throw new Error(j?.error ?? "send failed");
+
+      setMsg("메일 발송 완료 ✅");
+    } catch (e: any) {
+      setErr(e?.message ?? "send failed");
+    }
+  }
+
+  const title = useMemo(() => {
+    if (loadingMe) return "Admin";
+    if (!me) return "Admin";
+    return `Admin (${me.handle})`;
+  }, [loadingMe, me]);
+
+  if (loadingMe) return <div className="p-6 text-sm">관리자 확인 중…</div>;
+  if (err) return <div className="p-6 text-sm text-red-400">에러: {err}</div>;
+  if (!me) return <div className="p-6 text-sm">세션 없음</div>;
 
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-end justify-between">
+    <main className="mx-auto max-w-3xl px-5 pt-14 pb-20">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Admin</h1>
-          <div className="text-sm text-white/60">승인 / 밴 관리</div>
+          <h1 className="text-2xl font-semibold">{title}</h1>
+          <p className="mt-2 text-sm text-zinc-600 dark:text-white/60">
+            승인 대기 유저에게 1회용 승인코드를 발급/메일 발송하거나, 승인/밴 처리합니다.
+          </p>
         </div>
+
         <button
-          className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm"
-          onClick={reload}
+          onClick={loadPending}
+          className="rounded-full border border-black/10 bg-black/5 px-4 py-2 text-sm dark:border-white/10 dark:bg-white/10"
         >
           새로고침
         </button>
       </div>
 
-      <div className="space-y-2">
-        {rows.map((r) => (
-          <div
-            key={r.id}
-            className="rounded-2xl border border-white/10 bg-white/5 p-4"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="space-y-1">
-                <div className="text-sm font-semibold">
-                  {r.display_name ?? "(no name)"}{" "}
-                  <span className="text-white/40">@{r.handle ?? "—"}</span>
-                </div>
-                <div className="text-xs text-white/50">
-                  {r.id} · created {new Date(r.created_at).toLocaleString()}
-                </div>
-                <div className="text-xs text-white/60">
-                  approved: {String(r.is_approved)} / banned: {String(r.is_banned)} / admin:{" "}
-                  {String(r.is_admin)}
-                </div>
-              </div>
+      {msg && <div className="mt-4 text-sm text-emerald-400">{msg}</div>}
+      {err && <div className="mt-4 text-sm text-red-400">에러: {err}</div>}
 
-              <div className="flex gap-2">
-                {r.is_approved ? (
+      <section className="mt-8">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">승인 대기</h2>
+          <div className="text-sm text-zinc-600 dark:text-white/60">
+            {loadingList ? "불러오는 중…" : `${rows.length}명`}
+          </div>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {!loadingList && rows.length === 0 && (
+            <div className="rounded-2xl border border-black/10 bg-black/5 p-4 text-sm dark:border-white/10 dark:bg-white/10">
+              승인 대기 유저 없음
+            </div>
+          )}
+
+          {rows.map((r) => (
+            <div
+              key={r.id}
+              className="flex flex-col gap-3 rounded-2xl border border-black/10 bg-white/60 p-4 backdrop-blur dark:border-white/10 dark:bg-white/5"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-medium truncate">
+                    {r.display_name ?? r.handle}{" "}
+                    <span className="text-xs text-zinc-500 dark:text-white/50">
+                      @{r.handle}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xs text-zinc-500 dark:text-white/50 break-all">
+                    {r.id}
+                  </div>
+                </div>
+
+                <div className="flex shrink-0 flex-wrap gap-2 justify-end">
                   <button
-                    className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm"
-                    onClick={() => approve(r.id, false)}
+                    onClick={() => {
+                      navigator.clipboard.writeText(r.id);
+                      setMsg("UUID 복사됨");
+                    }}
+                    className="rounded-full border border-black/10 bg-black/5 px-3 py-2 text-xs dark:border-white/10 dark:bg-white/10"
                   >
-                    승인 해제
+                    UUID 복사
                   </button>
-                ) : (
+
                   <button
-                    className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm"
-                    onClick={() => approve(r.id, true)}
+                    onClick={() => issueCode(r.id)}
+                    className="rounded-full border border-black/10 bg-black/5 px-3 py-2 text-xs dark:border-white/10 dark:bg-white/10"
+                  >
+                    코드 발급(복사)
+                  </button>
+
+                  <button
+                    onClick={() => sendCodeEmail(r.id)}
+                    className="rounded-full border border-indigo-500/30 bg-indigo-500/15 px-3 py-2 text-xs text-indigo-700 dark:text-indigo-200"
+                  >
+                    메일 발송
+                  </button>
+
+                  <button
+                    onClick={() => approveUser(r.id)}
+                    className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-200"
                   >
                     승인
                   </button>
-                )}
 
-                {r.is_banned ? (
                   <button
-                    className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm"
-                    onClick={() => ban(r.id, false)}
-                  >
-                    밴 해제
-                  </button>
-                ) : (
-                  <button
-                    className="rounded-full border border-red-400/20 bg-red-500/10 px-4 py-2 text-sm text-red-100"
-                    onClick={() => ban(r.id, true)}
+                    onClick={() => banUser(r.id)}
+                    className="rounded-full border border-red-500/30 bg-red-500/15 px-3 py-2 text-xs text-red-700 dark:text-red-200"
                   >
                     밴
                   </button>
-                )}
+                </div>
+              </div>
+
+              <div className="text-xs text-zinc-600 dark:text-white/60">
+                공개: {r.is_public ? "ON" : "OFF"} · admin: {r.is_admin ? "YES" : "NO"}
               </div>
             </div>
-
-            {r.ban_reason ? (
-              <div className="mt-2 text-xs text-red-200/80">
-                ban_reason: {r.ban_reason}
-              </div>
-            ) : null}
-          </div>
-        ))}
-      </div>
-    </div>
+          ))}
+        </div>
+      </section>
+    </main>
   );
 }
