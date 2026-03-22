@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import ThemeToggle from "@/components/layout/ThemeToggle";
+import { PUBLIC_HANDLE } from "@/lib/config";
 
 type TabKey = "home" | "gallery" | "collection" | "profile";
 
@@ -68,10 +70,10 @@ export default function TopTabs({
   onChange: (t: TabKey) => void;
 }) {
   const [isAuthed, setIsAuthed] = useState<boolean>(false);
+  const searchParams = useSearchParams();
 
-  // ✅ 여기만 바꾸면 공개 수집 주인 변경 가능
-  const publicHandle = "dal2997";
-  const publicCollectionHref = `/u/${encodeURIComponent(publicHandle)}`;
+  // char 파라미터를 유지한 채로 공개 수집 페이지로 이동
+  const publicCollectionHref = `/u/${encodeURIComponent(PUBLIC_HANDLE)}?char=${searchParams.get("char") ?? "momonga"}`;
 
   useEffect(() => {
     (async () => {

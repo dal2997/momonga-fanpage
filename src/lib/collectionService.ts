@@ -1,14 +1,20 @@
 import { supabase } from "@/lib/supabase/client";
+import type { CharacterId } from "@/data/characters";
 
 /**
  * DB 컬럼(snake_case) 그대로 쓰는 row 반환
- * - collections 테이블에 owner_id(=uuid) 기준으로 필터
+ * - collections 테이블에 owner_id(=uuid) + character 기준으로 필터
+ *
+ * ⚠️  DB 마이그레이션 필요:
+ *   ALTER TABLE collections ADD COLUMN IF NOT EXISTS character text NOT NULL DEFAULT 'momonga';
+ *   CREATE INDEX IF NOT EXISTS idx_collections_character ON collections(owner_id, character);
  */
-export async function fetchCollection(ownerId: string) {
+export async function fetchCollection(ownerId: string, character: CharacterId = "momonga") {
   const { data, error } = await supabase
     .from("collections")
     .select("*")
     .eq("owner_id", ownerId)
+    .eq("character", character)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
@@ -30,11 +36,13 @@ export async function insertCollectItem(
     status: "collecting" | "collected";
     myImage?: string | null;
     myMemo?: string | null;
-  }
+  },
+  character: CharacterId = "momonga"
 ) {
   const payload = {
     id: item.id,
     owner_id: ownerId,
+    character,
     title: item.title,
     image: item.image,
     link: item.link,
@@ -53,6 +61,18 @@ export async function insertCollectItem(
  * update: (ownerId, itemId, patch)
  * - owner_id 매칭되는 row만 업데이트되게 where를 함께 건다
  */
+/** DB 컬럼(snake_case) 패치 타입 */
+type DbCollectionPatch = {
+  title?: string | null;
+  image?: string | null;
+  link?: string | null;
+  original_price?: number | null;
+  used_price?: number | null;
+  status?: "collecting" | "collected";
+  my_image?: string | null;
+  my_memo?: string | null;
+};
+
 export async function updateCollectItem(
   ownerId: string,
   itemId: string,
@@ -67,7 +87,7 @@ export async function updateCollectItem(
     myMemo?: string | null;
   }
 ) {
-  const dbPatch: any = {};
+  const dbPatch: DbCollectionPatch = {};
   if ("title" in patch) dbPatch.title = patch.title;
   if ("image" in patch) dbPatch.image = patch.image;
   if ("link" in patch) dbPatch.link = patch.link;

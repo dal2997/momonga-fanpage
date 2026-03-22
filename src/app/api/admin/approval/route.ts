@@ -1,57 +1,31 @@
 // src/app/api/admin/approval/route.ts
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { createServerClient } from "@supabase/ssr";
-
-async function supabaseServer() {
-  const cookieStore = await cookies(); // ✅ Next 버전에 따라 async라 await 필요
-
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name) {
-          return cookieStore.get(name)?.value;
-        },
-        // route handler에서 세션 갱신 쿠키 set까지 엄밀히 하려면 Response에 set 해야 하는데,
-        // 지금 흐름(관리자 세션 확인 + RPC 호출)에서는 읽기만으로도 충분해서 noop 유지
-        set() {},
-        remove() {},
-      },
-    }
-  );
-}
-
-async function sendWithResend(to: string, subject: string, html: string) {
-  const key = process.env.RESEND_API_KEY;
-  const from = process.env.MAIL_FROM;
-
-  if (!key) throw new Error("RESEND_API_KEY is missing");
-  if (!from) throw new Error("MAIL_FROM is missing");
-
-  const resp = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ from, to, subject, html }),
-  });
-
-  if (!resp.ok) {
-    const t = await resp.text();
-    throw new Error(`Resend failed: ${resp.status} ${t}`);
-  }
-}
+import {
+  makeSupabase,
+  sendWithResend,
+  adminGetUserEmail,
+  APP_NAME,
+  getSiteUrl,
+} from "@/lib/adminUtils";
 
 export async function POST(req: Request) {
-  const supabase = await supabaseServer();
+  const res = NextResponse.json({ ok: true });
+  const supabase = await makeSupabase(res);
 
-  // 세션 확인
+  // 1) 세션 확인
   const { data: u, error: ue } = await supabase.auth.getUser();
   if (ue) return NextResponse.json({ ok: false, error: ue.message }, { status: 401 });
   if (!u.user) return NextResponse.json({ ok: false, error: "no session" }, { status: 401 });
+
+  // 2) 관리자 체크 (profiles.is_admin)
+  const { data: me, error: meErr } = await supabase
+    .from("profiles")
+    .select("id,is_admin")
+    .eq("id", u.user.id)
+    .maybeSingle();
+
+  if (meErr) return NextResponse.json({ ok: false, error: meErr.message }, { status: 403 });
+  if (!me?.is_admin) return NextResponse.json({ ok: false, error: "not admin" }, { status: 403 });
 
   const body = await req.json().catch(() => null);
   const action = body?.action as string | undefined;
@@ -62,60 +36,97 @@ export async function POST(req: Request) {
   }
 
   try {
-    if (action === "issue") {
-      // 코드만 발급해서 반환(복사용)
-      const { data: code, error } = await supabase.rpc("issue_approval_code", {
-        p_user_id: userId,
-        p_expires_minutes: 1440,
-      });
-      if (error) throw error;
+    // ── 승인 ──────────────────────────────────────────────────────────────
+    if (action === "approve") {
+      const { error: upErr } = await supabase
+        .from("profiles")
+        .update({ is_approved: true, approved_at: new Date().toISOString() })
+        .eq("id", userId);
 
-      return NextResponse.json({ ok: true, code });
-    }
+      if (upErr) throw upErr;
 
-    if (action === "send") {
-      // 이메일 조회 (admin only)
-      const { data: email, error: e1 } = await supabase.rpc("admin_get_user_email", {
-        p_user_id: userId,
-      });
-      if (e1) throw e1;
-      if (!email) throw new Error("target email not found");
+      // 승인메일 1회만: approval_mail_sent_at이 null인 경우에만 발송 권한 획득
+      const { data: mark, error: markErr } = await supabase
+        .from("profiles")
+        .update({ approval_mail_sent_at: new Date().toISOString() })
+        .eq("id", userId)
+        .is("approval_mail_sent_at", null)
+        .select("id")
+        .maybeSingle();
 
-      // 코드 발급
-      const { data: code, error: e2 } = await supabase.rpc("issue_approval_code", {
-        p_user_id: userId,
-        p_expires_minutes: 1440,
-      });
-      if (e2) throw e2;
+      if (markErr) throw markErr;
 
-      // 메일 발송
-      const subject = `[${process.env.APP_NAME ?? "Momonga"}] 승인 코드가 도착했어요`;
-      const html = `
-        <div style="font-family:Arial,sans-serif;line-height:1.6">
-          <h2>승인 코드</h2>
-          <p>아래 코드를 Redeem 페이지에 입력하면 계정이 활성화됩니다.</p>
-          <p style="font-size:20px;font-weight:700;letter-spacing:1px">${code}</p>
-          <p style="color:#666">이 코드는 24시간 내 1회만 사용할 수 있어요.</p>
-        </div>
-      `;
-      await sendWithResend(email, subject, html);
-
-      // (선택) 발송 기록 (실패해도 기능은 돌아가게 가볍게)
-      try {
-        await supabase
-          .from("approval_codes")
-          .update({ sent_to_email: email, sent_at: new Date().toISOString() })
-          .eq("user_id", userId)
-          .is("used_at", null)
-          .order("created_at", { ascending: false })
-          .limit(1);
-      } catch {}
+      if (mark?.id) {
+        const email = await adminGetUserEmail(supabase, userId);
+        if (email) {
+          const subject = `[${APP_NAME}] 승인 완료 안내`;
+          const html = `
+            <div style="font-family:Arial,sans-serif;line-height:1.6">
+              <h2>승인 완료 ✅</h2>
+              <p>이제 Momonga 수집 기능을 사용할 수 있어요.</p>
+              <p><a href="${getSiteUrl()}/?tab=collection">수집하러 가기</a></p>
+              <p style="color:#666;font-size:12px">이 메일은 승인 시 1회만 발송됩니다.</p>
+            </div>
+          `;
+          await sendWithResend(email, subject, html);
+        }
+      }
 
       return NextResponse.json({ ok: true });
     }
 
+    // ── 밴 ────────────────────────────────────────────────────────────────
+    if (action === "ban") {
+      const reason = (body?.reason as string | undefined)?.trim() || null;
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({ is_banned: true, ban_reason: reason })
+        .eq("id", userId);
+
+      if (error) throw error;
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── 언밴 ──────────────────────────────────────────────────────────────
+    if (action === "unban") {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ is_banned: false, ban_reason: null })
+        .eq("id", userId);
+
+      if (error) throw error;
+      return NextResponse.json({ ok: true });
+    }
+
+    // ── 초대코드 발급 ────────────────────────────────────────────────────
+    if (action === "issue") {
+      // TODO: invite_codes 테이블 스키마 확정 후 구현
+      // 예시: INSERT INTO invite_codes (code, issued_to, issued_by) VALUES (...)
+      // const code = crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase();
+      // const { error } = await supabase.from("invite_codes").insert({ code, issued_to: userId, issued_by: u.user.id });
+      return NextResponse.json(
+        { ok: false, error: "issue action: invite_codes 테이블 스키마 확정 후 구현 필요" },
+        { status: 501 }
+      );
+    }
+
+    // ── 초대코드 메일 발송 ───────────────────────────────────────────────
+    if (action === "send") {
+      // TODO: invite_codes 테이블에서 해당 유저의 최근 코드를 조회 후 메일 발송
+      // const { data: invite } = await supabase.from("invite_codes").select("code").eq("issued_to", userId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+      // if (!invite) return NextResponse.json({ ok: false, error: "발급된 코드 없음" }, { status: 404 });
+      // const email = await adminGetUserEmail(supabase, userId);
+      // await sendWithResend(email, `[${APP_NAME}] 초대 코드`, `코드: ${invite.code}`);
+      return NextResponse.json(
+        { ok: false, error: "send action: invite_codes 테이블 스키마 확정 후 구현 필요" },
+        { status: 501 }
+      );
+    }
+
     return NextResponse.json({ ok: false, error: "unknown action" }, { status: 400 });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? "failed" }, { status: 500 });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "failed";
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }

@@ -1,4 +1,3 @@
-// src/app/admin/AdminClient.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -18,6 +17,11 @@ type ProfileRow = {
   approved_at: string | null;
 };
 
+type Tab = "pending" | "approved" | "banned";
+
+const PROFILE_SELECT =
+  "id,handle,display_name,avatar_url,is_public,is_admin,is_approved,is_banned,ban_reason,approved_at";
+
 export default function AdminClient() {
   const router = useRouter();
 
@@ -27,12 +31,24 @@ export default function AdminClient() {
   const [rows, setRows] = useState<ProfileRow[]>([]);
   const [loadingList, setLoadingList] = useState(true);
 
+  const [tab, setTab] = useState<Tab>("pending");
+
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  // 공지/알림 메일용 (승인된 유저 전체)
+  const [noticeSubject, setNoticeSubject] = useState("");
+  const [noticeBody, setNoticeBody] = useState("");
+  const [sendingNotice, setSendingNotice] = useState(false);
+
+  function clearFlash() {
+    setMsg(null);
+    setErr(null);
+  }
+
   async function loadMeAndGuard() {
     setLoadingMe(true);
-    setErr(null);
+    clearFlash();
 
     const { data: u, error: ue } = await supabase.auth.getUser();
     if (ue) {
@@ -49,9 +65,7 @@ export default function AdminClient() {
 
     const { data, error } = await supabase
       .from("profiles")
-      .select(
-        "id,handle,display_name,avatar_url,is_public,is_admin,is_approved,is_banned,ban_reason,approved_at"
-      )
+      .select(PROFILE_SELECT)
       .eq("id", uid)
       .maybeSingle();
 
@@ -70,18 +84,29 @@ export default function AdminClient() {
     setLoadingMe(false);
   }
 
-  async function loadPending() {
+  async function loadList(nextTab: Tab = tab) {
     setLoadingList(true);
-    setErr(null);
+    clearFlash();
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .select(
-        "id,handle,display_name,avatar_url,is_public,is_admin,is_approved,is_banned,ban_reason,approved_at"
-      )
-      .eq("is_approved", false)
-      .eq("is_banned", false)
-      .order("handle", { ascending: true });
+    let q = supabase.from("profiles").select(PROFILE_SELECT);
+
+    if (nextTab === "pending") {
+      q = q
+        .eq("is_approved", false)
+        .eq("is_banned", false)
+        .order("handle", { ascending: true });
+    } else if (nextTab === "approved") {
+      // ✅ updated_at 같은 컬럼 쓰면 DB에 없어서 터질 수 있음
+      q = q
+        .eq("is_approved", true)
+        .eq("is_banned", false)
+        .order("approved_at", { ascending: false })
+        .order("handle", { ascending: true });
+    } else {
+      q = q.eq("is_banned", true).order("handle", { ascending: true });
+    }
+
+    const { data, error } = await q;
 
     if (error) {
       setErr(error.message);
@@ -96,98 +121,162 @@ export default function AdminClient() {
   useEffect(() => {
     (async () => {
       await loadMeAndGuard();
-      await loadPending();
+      await loadList("pending");
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function approveUser(userId: string) {
-    setMsg(null);
-    setErr(null);
+    clearFlash();
 
     // 낙관적 UI
     setRows((prev) => prev.filter((r) => r.id !== userId));
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        is_approved: true,
-        approved_at: new Date().toISOString(),
-      })
-      .eq("id", userId);
+    // ✅ 승인 + 승인메일(1회) 자동발송은 route.ts에서 처리하는 게 정답
+    const resp = await fetch("/api/admin/approval", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ action: "approve", userId }),
+    });
 
-    if (error) {
-      setErr(error.message);
-      await loadPending();
+    const j = await resp.json().catch(() => null);
+
+    if (!resp.ok || !j?.ok) {
+      setErr(j?.error ?? `approve failed (${resp.status})`);
+      await loadList();
       return;
     }
 
-    setMsg("승인 완료 ✅");
+    setMsg("승인 완료 ✅ (승인메일은 1회 자동 발송)");
   }
 
   async function banUser(userId: string) {
-    const reason = window.prompt("밴 사유(선택)");
-    setMsg(null);
-    setErr(null);
+    const reason = window.prompt("밴 사유(선택)") ?? "";
+    clearFlash();
 
     setRows((prev) => prev.filter((r) => r.id !== userId));
 
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        is_banned: true,
-        ban_reason: (reason ?? "").trim() || null,
-      })
-      .eq("id", userId);
+    // ✅ 여기서도 DB 직접 update 말고 admin API로 보내는 게 안전 (RLS/권한/로그)
+    const resp = await fetch("/api/admin/approval", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ action: "ban", userId, reason: reason.trim() || null }),
+    });
 
-    if (error) {
-      setErr(error.message);
-      await loadPending();
+    const j = await resp.json().catch(() => null);
+
+    if (!resp.ok || !j?.ok) {
+      setErr(j?.error ?? `ban failed (${resp.status})`);
+      await loadList();
       return;
     }
 
     setMsg("밴 처리 완료 ✅");
   }
 
-  async function issueCode(userId: string) {
-    setMsg(null);
-    setErr(null);
+  async function unbanUser(userId: string) {
+    clearFlash();
 
-    try {
-      const res = await fetch("/api/admin/approval", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "issue", userId }),
-      });
+    setRows((prev) => prev.filter((r) => r.id !== userId));
 
-      const j = await res.json();
-      if (!j?.ok) throw new Error(j?.error ?? "issue failed");
+    const resp = await fetch("/api/admin/approval", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ action: "unban", userId }),
+    });
 
-      await navigator.clipboard.writeText(j.code);
-      setMsg(`승인코드 발급됨 (클립보드 복사): ${j.code}`);
-    } catch (e: any) {
-      setErr(e?.message ?? "issue failed");
+    const j = await resp.json().catch(() => null);
+
+    if (!resp.ok || !j?.ok) {
+      setErr(j?.error ?? `unban failed (${resp.status})`);
+      await loadList();
+      return;
     }
+
+    setMsg("언밴 완료 ✅");
   }
 
-  async function sendCodeEmail(userId: string) {
-    setMsg(null);
-    setErr(null);
+  async function issueCode(userId: string) {
+    clearFlash();
 
-    try {
-      const res = await fetch("/api/admin/approval", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "send", userId }),
-      });
+    const resp = await fetch("/api/admin/approval", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ action: "issue", userId }),
+    });
 
-      const j = await res.json();
-      if (!j?.ok) throw new Error(j?.error ?? "send failed");
+    const j = await resp.json().catch(() => null);
 
-      setMsg("메일 발송 완료 ✅");
-    } catch (e: any) {
-      setErr(e?.message ?? "send failed");
+    if (!resp.ok || !j?.ok) {
+      setErr(j?.error ?? `issue failed (${resp.status})`);
+      return;
     }
+
+    const code = j.code as string;
+    await navigator.clipboard.writeText(code);
+    setMsg(`코드 발급/복사됨: ${code}`);
+  }
+
+  async function sendCodeMail(userId: string) {
+    clearFlash();
+
+    const resp = await fetch("/api/admin/approval", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ action: "send", userId }),
+    });
+
+    const j = await resp.json().catch(() => null);
+
+    if (!resp.ok || !j?.ok) {
+      setErr(j?.error ?? `send failed (${resp.status})`);
+      return;
+    }
+
+    setMsg("메일 발송 완료 ✅");
+  }
+
+  async function sendNoticeToApproved() {
+    if (!noticeSubject.trim() || !noticeBody.trim()) {
+      setErr("공지 제목/내용을 입력해줘.");
+      return;
+    }
+
+    const ok = window.confirm(
+      "공지메일은 '승인된 유저 전체'에게 발송됩니다.\n(같은 유저가 여러 번 받을 수 있어요)\n진행할까요?"
+    );
+    if (!ok) return;
+
+    setSendingNotice(true);
+    clearFlash();
+
+    const resp = await fetch("/api/admin/notice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        subject: noticeSubject.trim(),
+        content: noticeBody.trim(), // ✅ route.ts가 content로 받게 맞춰두는 걸 추천
+      }),
+    });
+
+    const j = await resp.json().catch(() => null);
+
+    setSendingNotice(false);
+
+    if (!resp.ok || !j?.ok) {
+      setErr(j?.error ?? `notice failed (${resp.status})`);
+      return;
+    }
+
+    setMsg(`공지메일 발송 완료 ✅ (대상 ${j.sent ?? "?"}명)`);
+    setNoticeSubject("");
+    setNoticeBody("");
   }
 
   const title = useMemo(() => {
@@ -200,30 +289,84 @@ export default function AdminClient() {
   if (err) return <div className="p-6 text-sm text-red-400">에러: {err}</div>;
   if (!me) return <div className="p-6 text-sm">세션 없음</div>;
 
+  const tabLabel = tab === "pending" ? "승인 대기" : tab === "approved" ? "승인됨" : "밴됨";
+
   return (
-    <main className="mx-auto max-w-3xl px-5 pt-14 pb-20">
+    <main className="mx-auto max-w-4xl px-5 pt-14 pb-20">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">{title}</h1>
           <p className="mt-2 text-sm text-zinc-600 dark:text-white/60">
-            승인 대기 유저에게 1회용 승인코드를 발급/메일 발송하거나, 승인/밴 처리합니다.
+            승인코드 발급/메일 발송, 승인/밴/언밴, 공지메일 발송
           </p>
         </div>
 
         <button
-          onClick={loadPending}
+          onClick={() => loadList()}
           className="rounded-full border border-black/10 bg-black/5 px-4 py-2 text-sm dark:border-white/10 dark:bg-white/10"
         >
           새로고침
         </button>
       </div>
 
+      <div className="mt-6 flex flex-wrap gap-2">
+        {(["pending", "approved", "banned"] as Tab[]).map((t) => (
+          <button
+            key={t}
+            onClick={async () => {
+              setTab(t);
+              await loadList(t);
+            }}
+            className={[
+              "rounded-full border px-4 py-2 text-sm",
+              t === tab
+                ? "border-white/20 bg-white/15"
+                : "border-black/10 bg-black/5 dark:border-white/10 dark:bg-white/10",
+            ].join(" ")}
+          >
+            {t === "pending" ? "승인 대기" : t === "approved" ? "승인됨" : "밴됨"}
+          </button>
+        ))}
+      </div>
+
       {msg && <div className="mt-4 text-sm text-emerald-400">{msg}</div>}
       {err && <div className="mt-4 text-sm text-red-400">에러: {err}</div>}
 
+      {/* 공지메일: 승인됨 탭에서만 노출 */}
+      {tab === "approved" && (
+        <section className="mt-8 rounded-2xl border border-black/10 bg-white/60 p-4 backdrop-blur dark:border-white/10 dark:bg-white/5">
+          <h2 className="text-lg font-semibold">공지/알림 메일 (승인된 유저 전체)</h2>
+          <p className="mt-1 text-xs text-zinc-600 dark:text-white/60">
+            승인된 유저에게 일괄 공지메일. (동일 유저가 여러 번 받을 수 있음)
+          </p>
+
+          <div className="mt-3 space-y-2">
+            <input
+              className="w-full rounded-xl border px-4 py-3 bg-transparent"
+              placeholder="제목"
+              value={noticeSubject}
+              onChange={(e) => setNoticeSubject(e.target.value)}
+            />
+            <textarea
+              className="w-full min-h-[120px] rounded-xl border px-4 py-3 bg-transparent"
+              placeholder="내용"
+              value={noticeBody}
+              onChange={(e) => setNoticeBody(e.target.value)}
+            />
+            <button
+              disabled={sendingNotice}
+              onClick={sendNoticeToApproved}
+              className="rounded-xl border bg-black px-4 py-3 text-sm text-white disabled:opacity-50 dark:bg-white dark:text-black"
+            >
+              {sendingNotice ? "발송 중..." : "공지메일 발송"}
+            </button>
+          </div>
+        </section>
+      )}
+
       <section className="mt-8">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">승인 대기</h2>
+          <h2 className="text-lg font-semibold">{tabLabel}</h2>
           <div className="text-sm text-zinc-600 dark:text-white/60">
             {loadingList ? "불러오는 중…" : `${rows.length}명`}
           </div>
@@ -232,7 +375,7 @@ export default function AdminClient() {
         <div className="mt-4 space-y-3">
           {!loadingList && rows.length === 0 && (
             <div className="rounded-2xl border border-black/10 bg-black/5 p-4 text-sm dark:border-white/10 dark:bg-white/10">
-              승인 대기 유저 없음
+              목록 없음
             </div>
           )}
 
@@ -252,6 +395,16 @@ export default function AdminClient() {
                   <div className="mt-1 text-xs text-zinc-500 dark:text-white/50 break-all">
                     {r.id}
                   </div>
+                  {r.is_banned && (
+                    <div className="mt-1 text-xs text-red-300/90">
+                      밴 사유: {r.ban_reason ?? "—"}
+                    </div>
+                  )}
+                  {r.is_approved && (
+                    <div className="mt-1 text-xs text-emerald-300/90">
+                      승인시각: {r.approved_at ?? "—"}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex shrink-0 flex-wrap gap-2 justify-end">
@@ -265,33 +418,55 @@ export default function AdminClient() {
                     UUID 복사
                   </button>
 
-                  <button
-                    onClick={() => issueCode(r.id)}
-                    className="rounded-full border border-black/10 bg-black/5 px-3 py-2 text-xs dark:border-white/10 dark:bg-white/10"
-                  >
-                    코드 발급(복사)
-                  </button>
+                  {/* 승인대기 탭에서만 코드발급/메일/승인 */}
+                  {tab === "pending" && (
+                    <>
+                      <button
+                        onClick={() => issueCode(r.id)}
+                        className="rounded-full border border-black/10 bg-black/5 px-3 py-2 text-xs dark:border-white/10 dark:bg-white/10"
+                      >
+                        코드 발급(복사)
+                      </button>
+                      <button
+                        onClick={() => sendCodeMail(r.id)}
+                        className="rounded-full border border-blue-500/30 bg-blue-500/15 px-3 py-2 text-xs text-blue-700 dark:text-blue-200"
+                      >
+                        메일 발송
+                      </button>
+                      <button
+                        onClick={() => approveUser(r.id)}
+                        className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-200"
+                      >
+                        승인
+                      </button>
+                      <button
+                        onClick={() => banUser(r.id)}
+                        className="rounded-full border border-red-500/30 bg-red-500/15 px-3 py-2 text-xs text-red-700 dark:text-red-200"
+                      >
+                        밴
+                      </button>
+                    </>
+                  )}
 
-                  <button
-                    onClick={() => sendCodeEmail(r.id)}
-                    className="rounded-full border border-indigo-500/30 bg-indigo-500/15 px-3 py-2 text-xs text-indigo-700 dark:text-indigo-200"
-                  >
-                    메일 발송
-                  </button>
+                  {/* 승인됨 탭: 밴 가능 */}
+                  {tab === "approved" && (
+                    <button
+                      onClick={() => banUser(r.id)}
+                      className="rounded-full border border-red-500/30 bg-red-500/15 px-3 py-2 text-xs text-red-700 dark:text-red-200"
+                    >
+                      밴
+                    </button>
+                  )}
 
-                  <button
-                    onClick={() => approveUser(r.id)}
-                    className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-200"
-                  >
-                    승인
-                  </button>
-
-                  <button
-                    onClick={() => banUser(r.id)}
-                    className="rounded-full border border-red-500/30 bg-red-500/15 px-3 py-2 text-xs text-red-700 dark:text-red-200"
-                  >
-                    밴
-                  </button>
+                  {/* 밴됨 탭: 언밴 가능 */}
+                  {tab === "banned" && (
+                    <button
+                      onClick={() => unbanUser(r.id)}
+                      className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-200"
+                    >
+                      언밴
+                    </button>
+                  )}
                 </div>
               </div>
 

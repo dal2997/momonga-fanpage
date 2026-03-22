@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import GlassCard from "@/components/layout/GlassCard";
 import { CollectItem } from "@/data/collection";
+import { CHARACTERS, type CharacterId } from "@/data/characters";
 import {
   fetchCollection,
   insertCollectItem,
@@ -66,7 +67,13 @@ function withTimeout<T>(p: Promise<T>, ms: number, label = "timeout") {
   });
 }
 
-export default function Collection() {
+export default function Collection({
+  character = "momonga",
+  onCharChange,
+}: {
+  character?: CharacterId;
+  onCharChange?: (id: CharacterId) => void;
+}) {
   const [view, setView] = useState<ViewMode>("collecting");
   const [collecting, setCollecting] = useState<CollectItem[]>([]);
   const [collected, setCollected] = useState<CollectItem[]>([]);
@@ -175,7 +182,7 @@ export default function Collection() {
 
   const refreshFromDb = useCallback(
     async (uid: string) => {
-      const rows = await fetchCollection(uid);
+      const rows = await fetchCollection(uid, character);
 
       const nextCollecting = rows.filter((r: any) => r.status === "collecting").map(mapRowToItem);
 
@@ -519,7 +526,7 @@ export default function Collection() {
         originalPrice: parsePrice(addOriginal),
         usedPrice: parsePrice(addUsed),
         status: "collecting",
-      });
+      }, character);
 
       await load();
 
@@ -799,7 +806,7 @@ export default function Collection() {
           status: "collected",
           myImage: myUrl,
           myMemo: quickMemo.trim() ? quickMemo.trim() : null,
-        });
+        }, character);
       }
 
       await load();
@@ -819,11 +826,43 @@ export default function Collection() {
 
   return (
     <section id="collection" className="scroll-mt-24">
+
+      {/* ── 캐릭터 탭 ─────────────────────────────── */}
+      <div className="mb-6 flex items-center gap-2 flex-wrap">
+        {CHARACTERS.map((c) => {
+          const active = c.id === character;
+          return (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => onCharChange?.(c.id)}
+              className={[
+                "inline-flex items-center gap-2 rounded-2xl border px-5 py-2.5 text-sm font-medium transition",
+                active
+                  ? "border-black/20 bg-black/10 text-zinc-900 dark:border-white/20 dark:bg-white/12 dark:text-white shadow-[0_8px_24px_rgba(0,0,0,0.10)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
+                  : "border-black/10 bg-black/[0.03] text-zinc-500 hover:bg-black/[0.06] hover:text-zinc-800 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/40 dark:hover:bg-white/[0.07] dark:hover:text-white/70",
+              ].join(" ")}
+            >
+              <span className="text-base">{c.emoji}</span>
+              <span>{c.name}</span>
+              {active && (
+                <span className="ml-0.5 rounded-full bg-black/10 px-1.5 py-0.5 text-xs dark:bg-white/10">
+                  수집중
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-semibold">수집</h2>
+          <h2 className="text-2xl font-semibold">
+            {CHARACTERS.find((c) => c.id === character)?.emoji}{" "}
+            {CHARACTERS.find((c) => c.id === character)?.name} 수집
+          </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            “수집중”에서 “수집완료”로 옮기며 내 굿즈 아카이브를 만든다
+            수집중 → 수집완료로 옮기며 내 굿즈 아카이브를 만든다
           </p>
         </div>
 
@@ -1144,7 +1183,7 @@ export default function Collection() {
                     )
                   ) : (
                     <div className="grid h-full place-items-center p-8 text-white/60">
-                      수집완료로 옮기면 “내 사진” 영역이 생겨.
+                      수집완료로 옮기면 "내 사진" 영역이 생겨.
                     </div>
                   )}
                 </div>
@@ -1440,7 +1479,7 @@ export default function Collection() {
                 {open.status === "collecting" && (
                   <>
                     <div className="mt-6 text-sm text-white/55">
-                      내 굿즈 사진(선택)과 메모(선택)를 적고 “수집완료로 이동”을 누르면 저장돼.
+                      내 굿즈 사진(선택)과 메모(선택)를 적고 "수집완료로 이동"을 누르면 저장돼.
                     </div>
 
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
