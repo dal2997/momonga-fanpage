@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { quotes } from "@/data/quotes";
 import GlassCard from "@/components/layout/GlassCard";
 import GlassIcon from "@/components/layout/GlassIcon";
 import { Sparkles } from "lucide-react";
+import type { CharacterDef } from "@/data/characters";
 
-export default function Hero() {
+export default function Hero({ character }: { character: CharacterDef }) {
   const [mounted, setMounted] = useState(false);
   const [quote, setQuote] = useState("");
 
@@ -19,13 +19,18 @@ export default function Hero() {
   const [pop, setPop] = useState(false);
 
   const pickedQuote = useMemo(() => {
-    return quotes[Math.floor(Math.random() * quotes.length)];
-  }, []);
+    return character.quotes[Math.floor(Math.random() * character.quotes.length)];
+  }, [character]);
 
   useEffect(() => {
     setMounted(true);
     setQuote(pickedQuote);
   }, [pickedQuote]);
+
+  // 캐릭터 변경 시 인용구 업데이트
+  useEffect(() => {
+    setQuote(character.quotes[Math.floor(Math.random() * character.quotes.length)]);
+  }, [character.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const el = ref.current;
@@ -35,10 +40,8 @@ export default function Hero() {
       const rect = el.getBoundingClientRect();
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height / 2;
-
       const dx = (e.clientX - cx) / rect.width;
       const dy = (e.clientY - cy) / rect.height;
-
       const clamp = (v: number) => Math.max(-0.5, Math.min(0.5, v));
       setTilt({ x: clamp(dx), y: clamp(dy) });
     };
@@ -52,7 +55,6 @@ export default function Hero() {
     window.setTimeout(() => setPop(false), 450);
   };
 
-  // ✅ 라이트/다크 텍스트 토큰
   const heading = "text-zinc-900 dark:text-white";
   const sub = "text-zinc-700 dark:text-white/80";
   const faint = "text-zinc-600 dark:text-white/70";
@@ -64,7 +66,9 @@ export default function Hero() {
         <div className="grid items-center gap-10 md:grid-cols-[1.2fr_0.8fr]">
           {/* 왼쪽: 텍스트 */}
           <div>
-            <h1 className={`text-4xl font-semibold ${heading}`}>모몽가 팬페이지</h1>
+            <h1 className={`text-4xl font-semibold ${heading}`}>
+              {character.emoji} {character.name} 팬페이지
+            </h1>
 
             <div className="mt-5 flex gap-4">
               <GlassIcon label="팬메이드">
@@ -72,17 +76,13 @@ export default function Hero() {
               </GlassIcon>
             </div>
 
-            <p className={`mt-6 ${sub}`}>모몽가를 좋아하는 사람들이  
-            순간을 기록하고, 굿즈를 수집해  
-            자기만의 페이지로 남기는 공간 ✨
-            </p>
+            <p className={`mt-6 ${sub}`}>{character.tagline}</p>
 
             <div className="mt-8 rounded-2xl border border-black/10 bg-black/[0.04] p-6 dark:border-white/10 dark:bg-white/5">
               <p className={`text-sm ${faint}`}>오늘의 한 줄</p>
               <p className={`mt-2 text-lg ${heading}`}>{mounted ? quote : "…"}</p>
             </div>
 
-            {/* CTA + mini flow */}
             <div className="mt-6 flex flex-wrap items-center gap-3">
               <Link
                 href="/login"
@@ -103,7 +103,6 @@ export default function Hero() {
 
           {/* 오른쪽: 비주얼 */}
           <div className="relative">
-            {/* glow 배경 (라이트/다크 분리) */}
             <div
               className="
                 pointer-events-none absolute inset-0 -z-10 blur-2xl opacity-60
@@ -124,9 +123,8 @@ export default function Hero() {
                 type="button"
                 onClick={triggerPop}
                 className="group relative h-full w-full select-none"
-                aria-label="momonga"
+                aria-label={character.name}
               >
-                {/* hover시 글로우 강화 (라이트/다크 분리) */}
                 <div
                   className="
                     pointer-events-none absolute inset-0 rounded-full opacity-0 blur-2xl transition-opacity duration-200 group-hover:opacity-100
@@ -136,9 +134,17 @@ export default function Hero() {
                 />
 
                 <div className="absolute inset-0 grid place-items-center">
+                  {/* 이미지가 없는 캐릭터는 이모지 폴백 */}
                   <img
-                    src="/images/momonga/hero.png"
-                    alt="Momonga"
+                    src={character.heroImage}
+                    alt={character.heroAlt}
+                    onError={(e) => {
+                      // 이미지 로드 실패 시 이모지 표시
+                      const el = e.currentTarget as HTMLImageElement;
+                      el.style.display = "none";
+                      const sibling = el.nextElementSibling as HTMLElement | null;
+                      if (sibling) sibling.style.display = "flex";
+                    }}
                     className={[
                       "w-64 drop-shadow-[0_40px_80px_rgba(0,0,0,0.6)]",
                       "transition-transform duration-200 ease-out",
@@ -154,6 +160,13 @@ export default function Hero() {
                     }}
                     draggable={false}
                   />
+                  {/* 이미지 없을 때 이모지 폴백 */}
+                  <div
+                    className="hidden h-48 w-48 items-center justify-center rounded-full border border-black/10 bg-black/[0.04] text-8xl dark:border-white/10 dark:bg-white/[0.04]"
+                    style={{ display: "none" }}
+                  >
+                    {character.emoji}
+                  </div>
                 </div>
               </button>
             </div>

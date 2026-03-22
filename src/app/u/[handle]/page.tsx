@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import PublicCollectionGrid from "@/components/PublicCollectionGrid";
 import OwnerManageButton from "@/components/OwnerManageButton";
 import PublicStatsSummary from "@/components/PublicStatsSummary";
+import { CHARACTERS, safeCharId, type CharacterId } from "@/data/characters";
 
 type ViewTab = "all" | "collecting" | "collected";
 
@@ -51,13 +52,15 @@ function getSupabaseServer() {
 
 export default async function PublicUserPage(props: {
   params: Promise<{ handle: string }>;
-  searchParams?: Promise<{ tab?: string }>;
+  searchParams?: Promise<{ tab?: string; char?: string }>;
 }) {
   const params = await props.params;
   const searchParams = await props.searchParams;
 
   const handle = decodeURIComponent(params.handle ?? "").trim();
   const tab = safeTab(searchParams?.tab);
+  const charId: CharacterId = safeCharId(searchParams?.char);
+  const character = CHARACTERS.find((c) => c.id === charId)!;
 
   if (!handle) notFound();
 
@@ -95,6 +98,7 @@ export default async function PublicUserPage(props: {
       "id, owner_id, title, image, link, original_price, used_price, status, my_image, my_memo, created_at"
     )
     .eq("owner_id", profile.id)
+    .eq("character", charId)
     .order("created_at", { ascending: false })
     .returns<CollectionRow[]>();
 
@@ -184,8 +188,8 @@ export default async function PublicUserPage(props: {
       <section className="mx-auto max-w-6xl px-5 pt-24 pb-24">
         {/* 상단 돌아가기 */}
         <div className="mb-5 flex items-center justify-between">
-          <Link href="/?tab=collection" className={pill}>
-            ← 홈(수집탭)
+          <Link href="/" className={pill}>
+            ← 홈
           </Link>
 
           <Link
@@ -208,8 +212,35 @@ export default async function PublicUserPage(props: {
           points={points}
         />
 
+        {/* ── 캐릭터 탭 */}
+        <div className="mt-10 mb-2 flex items-center gap-2 flex-wrap">
+          {CHARACTERS.map((c) => {
+            const active = c.id === charId;
+            return (
+              <Link
+                key={c.id}
+                href={`/u/${encodeURIComponent(profile.handle)}?char=${c.id}&tab=${tab}`}
+                className={[
+                  "inline-flex items-center gap-2 rounded-2xl border px-5 py-2.5 text-sm font-medium transition",
+                  active
+                    ? "border-black/20 bg-black/10 text-zinc-900 shadow-[0_8px_24px_rgba(0,0,0,0.10)] dark:border-white/20 dark:bg-white/12 dark:text-white dark:shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
+                    : "border-black/10 bg-black/[0.03] text-zinc-500 hover:bg-black/[0.06] hover:text-zinc-800 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/40 dark:hover:bg-white/[0.07] dark:hover:text-white/70",
+                ].join(" ")}
+              >
+                <span className="text-base">{c.emoji}</span>
+                <span>{c.name}</span>
+                {active && (
+                  <span className="ml-0.5 rounded-full bg-black/10 px-1.5 py-0.5 text-xs dark:bg-white/10">
+                    보는중
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </div>
+
         {/* Header */}
-        <div className="mt-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-4">
             <div
               className={[
@@ -264,7 +295,7 @@ export default async function PublicUserPage(props: {
               return (
                 <Link
                   key={t}
-                  href={`/u/${encodeURIComponent(profile.handle)}?tab=${t}`}
+                  href={`/u/${encodeURIComponent(profile.handle)}?char=${charId}&tab=${t}`}
                   className={[
                     tabBase,
                     active ? tabLightActive : tabLightInactive,

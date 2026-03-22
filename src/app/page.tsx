@@ -2,6 +2,7 @@
 import { Suspense } from "react";
 import { createClient } from "@supabase/supabase-js";
 import HomeClient from "./HomeClient";
+import { PUBLIC_HANDLE } from "@/lib/config";
 
 type ProfileRow = {
   id: string;
@@ -26,8 +27,6 @@ function getSupabaseServer() {
   return createClient(url, anon, { auth: { persistSession: false } });
 }
 
-// ✅ 여기만 바꾸면 공개 핸들 바뀌어도 전체가 따라감
-const PUBLIC_HANDLE = "dal2997";
 
 export default async function Page() {
   const supabase = getSupabaseServer();

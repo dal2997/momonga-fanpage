@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
+// ✅ 서비스 점검/준비 중일 때 true로 설정 → 버튼 비활성화 + 안내 문구 표시
+const SERVICE_PAUSED = true;
+
 function safeNextPath(next: string | null) {
   if (!next) return "/";
   const v = next.trim();
@@ -139,15 +142,16 @@ export default function LoginPage() {
 
       <div className="space-y-3">
         <input
-          className="w-full rounded-md border border-white/10 bg-white/5 p-3"
+          className="w-full rounded-md border border-white/10 bg-white/5 p-3 disabled:opacity-40 disabled:cursor-not-allowed"
           placeholder="you@example.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          disabled={SERVICE_PAUSED}
         />
 
         <button
-          className="w-full rounded-md bg-white/10 p-3 disabled:opacity-50"
-          disabled={loading || !email || cooldown > 0}
+          className="w-full rounded-md bg-white/10 p-3 disabled:opacity-40 disabled:cursor-not-allowed"
+          disabled={SERVICE_PAUSED || loading || !email || cooldown > 0}
           onClick={sendLink}
         >
           {cooldown > 0
@@ -157,16 +161,32 @@ export default function LoginPage() {
             : "로그인 링크 보내기"}
         </button>
 
+        {/* 서비스 준비 중 안내 */}
+        {SERVICE_PAUSED && (
+          <div className="rounded-xl border border-black/8 bg-black/[0.03] dark:border-white/8 dark:bg-white/[0.03] px-5 py-4 text-center">
+            <p className="text-sm font-medium text-zinc-700 dark:text-white/70">
+              현재 서비스 준비 중입니다
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-zinc-400 dark:text-white/35">
+              더 나은 경험을 위해 마무리 작업이 진행 중이에요.
+              <br />
+              오픈되면 가장 먼저 알려드릴게요.
+            </p>
+          </div>
+        )}
+
         <div className="flex gap-2">
           <button
-            className="rounded-md bg-white/10 px-3 py-2"
+            className="rounded-md bg-white/10 px-3 py-2 disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={SERVICE_PAUSED}
             onClick={logout}
           >
             로그아웃
           </button>
 
           <button
-            className="rounded-md bg-white/10 px-3 py-2"
+            className="rounded-md bg-white/10 px-3 py-2 disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={SERVICE_PAUSED}
             onClick={() =>
               router.replace(
                 `/login?force=1&next=${encodeURIComponent(next)}`
@@ -177,7 +197,8 @@ export default function LoginPage() {
           </button>
 
           <button
-            className="rounded-md bg-white/10 px-3 py-2"
+            className="rounded-md bg-white/10 px-3 py-2 disabled:opacity-40 disabled:cursor-not-allowed"
+            disabled={SERVICE_PAUSED}
             onClick={() => router.replace(next)}
           >
             원래 페이지로
