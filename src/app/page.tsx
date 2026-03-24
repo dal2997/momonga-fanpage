@@ -52,9 +52,22 @@ export default async function Page() {
     preview = rows ?? [];
   }
 
+  // 3) 오늘 방문자 수 (RPC 없으면 0으로 폴백)
+  let todayVisits = 0;
+  try {
+    const { data: visitData } = await supabase.rpc("get_today_visit_count");
+    if (typeof visitData === "number") todayVisits = visitData;
+  } catch {
+    // 마이그레이션 전이면 무시
+  }
+
   return (
     <Suspense fallback={null}>
-      <HomeClient publicHandle={PUBLIC_HANDLE} collectionPreview={preview} />
+      <HomeClient
+        publicHandle={PUBLIC_HANDLE}
+        collectionPreview={preview}
+        todayVisits={todayVisits}
+      />
     </Suspense>
   );
 }

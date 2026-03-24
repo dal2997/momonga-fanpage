@@ -128,7 +128,7 @@ export default function PublicStatsSummary({
             {/* ✅ 라이트에서 더 '밝은 유리' */}
             <div className="mt-2 rounded-xl border border-black/10 bg-black/[0.02] p-2 dark:border-white/10 dark:bg-white/[0.05]">
               {chart.data.length >= 1 ? (
-                <svg width={chart.W} height={chart.H} viewBox={`0 0 ${chart.W} ${chart.H}`} className="block">
+                <svg width="100%" height={chart.H} viewBox={`0 0 ${chart.W} ${chart.H}`} className="block">
                   <polyline
                     points={chart.dashed}
                     fill="none"

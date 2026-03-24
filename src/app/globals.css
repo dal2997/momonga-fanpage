@@ -51,20 +51,22 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 
-  /* ✅ 라이트 기본 그라데이션(누리끼리 방지: '검정' 잉크 아주 약하게) */
+  /* 라이트: 핑크·민트 앰비언트 */
   background-image:
-    radial-gradient(1100px 800px at 18% 12%, rgba(0,0,0,0.06), transparent 60%),
-    radial-gradient(900px 700px at 82% 22%, rgba(0,0,0,0.04), transparent 62%),
-    radial-gradient(1200px 900px at 50% 92%, rgba(0,0,0,0.03), transparent 65%);
+    radial-gradient(1000px 700px at 15% 10%,  rgba(255, 180, 200, 0.18), transparent 60%),
+    radial-gradient(800px  600px at 85% 20%,  rgba(180, 200, 255, 0.12), transparent 60%),
+    radial-gradient(1100px 800px at 50% 95%,  rgba(255, 210, 160, 0.10), transparent 65%),
+    radial-gradient(600px  500px at 70% 55%,  rgba(200, 170, 255, 0.08), transparent 55%);
   background-attachment: fixed;
 }
 
-/* ✅ 다크일 때는 다크 전용 그라데이션(화이트 하이라이트) */
+/* 다크: 핑크·보라 앰비언트 (더 진하게) */
 html.dark body {
   background-image:
-    radial-gradient(1100px 800px at 18% 12%, rgba(255,255,255,0.08), transparent 60%),
-    radial-gradient(900px 700px at 82% 22%, rgba(255,255,255,0.06), transparent 62%),
-    radial-gradient(1200px 900px at 50% 92%, rgba(255,255,255,0.04), transparent 65%);
+    radial-gradient(1000px 700px at 15% 10%,  rgba(255, 100, 160, 0.14), transparent 60%),
+    radial-gradient(800px  600px at 85% 20%,  rgba(140, 100, 255, 0.10), transparent 60%),
+    radial-gradient(1100px 800px at 50% 95%,  rgba(255, 160, 80,  0.07), transparent 65%),
+    radial-gradient(600px  500px at 70% 55%,  rgba(180, 120, 255, 0.06), transparent 55%);
 }
 
 /* =========================
@@ -84,21 +86,21 @@ html.dark body {
   position: fixed;
   inset: -240px;
   pointer-events: none;
-  filter: blur(6px);
-  opacity: 0.9;
+  filter: blur(8px);
+  opacity: 0.85;
 
-  /* default: LIGHT */
+  /* 라이트: 핑크·보라 스포트라이트 */
   background:
-    radial-gradient(900px 700px at 20% 10%, rgba(0,0,0,0.10), transparent 60%),
-    radial-gradient(1000px 900px at 80% 20%, rgba(0,0,0,0.07), transparent 62%),
-    radial-gradient(1200px 1100px at 50% 90%, rgba(0,0,0,0.05), transparent 65%);
+    radial-gradient(900px 700px at 20% 10%,  rgba(255, 150, 180, 0.20), transparent 60%),
+    radial-gradient(800px 700px at 80% 20%,  rgba(160, 140, 255, 0.15), transparent 62%),
+    radial-gradient(1000px 900px at 50% 90%, rgba(255, 200, 120, 0.10), transparent 65%);
 }
 
 html.dark .spotlight {
   background:
-    radial-gradient(700px 700px at 20% 10%, rgba(255,255,255,0.18), transparent 60%),
-    radial-gradient(900px 900px at 80% 20%, rgba(255,255,255,0.12), transparent 62%),
-    radial-gradient(1100px 1000px at 50% 90%, rgba(255,255,255,0.08), transparent 65%);
+    radial-gradient(700px 700px at 20% 10%,  rgba(255, 80, 140, 0.22), transparent 60%),
+    radial-gradient(900px 900px at 80% 20%,  rgba(120, 80, 255, 0.16), transparent 62%),
+    radial-gradient(1000px 900px at 50% 90%, rgba(255, 140, 60,  0.09), transparent 65%);
 }
 
 /* ✅ (호환용) spotlight-light 클래스가 남아있어도 동작하게 유지 */
@@ -134,8 +136,8 @@ body::after {
 html.dark body::after {
   background:
     radial-gradient(
-      220px 220px at var(--mx, 50vw) var(--my, 40vh),
-      rgba(255,255,255,0.07),
+      260px 260px at var(--mx, 50vw) var(--my, 40vh),
+      rgba(255, 160, 200, 0.10),
       transparent 60%
     );
 }

@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { supabase } from "@/lib/supabase/client";
 
 import TopTabs from "@/components/layout/TopTabs";
 import Hero from "@/components/sections/Hero";
@@ -46,15 +47,29 @@ function pickPreviewImage(item: CollectionPreviewRow) {
 export default function HomeClient({
   publicHandle,
   collectionPreview,
+  todayVisits = 0,
 }: {
   publicHandle: string;
   collectionPreview: CollectionPreviewRow[];
+  todayVisits?: number;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const [tab, setTab] = useState<TabKey>(() => safeHomeTab(searchParams.get("tab")));
   const [charId, setCharId] = useState<CharacterId>(() => safeCharId(searchParams.get("char")));
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+
+  // 로그인 상태 확인
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setIsLoggedIn(!!data.session);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_e, s) => {
+      setIsLoggedIn(!!s);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
 
   // URL 파라미터 동기화
   useEffect(() => {
@@ -110,11 +125,12 @@ export default function HomeClient({
 
   return (
     <main className="relative">
-      <TopTabs value={tab} onChange={onChange} />
+      <TopTabs value={tab} onChange={onChange} todayVisits={todayVisits} />
 
       <div className="mx-auto max-w-6xl px-5 pt-24 pb-24">
 
-        {/* ── 캐릭터 스위처 ─────────────────────────────── */}
+        {/* ── 캐릭터 스위처 (홈/순간 탭에서만 표시) ── */}
+        {tab !== "collection" && tab !== "profile" && (
         <div className="mb-8 flex items-center gap-2 flex-wrap">
           {CHARACTERS.map((c) => {
             const active = c.id === charId;
@@ -136,6 +152,7 @@ export default function HomeClient({
             );
           })}
         </div>
+        )}
 
         {/* ── 탭 콘텐츠 ──────────────────────────────────── */}
         {tab === "home" && (
@@ -224,9 +241,15 @@ export default function HomeClient({
                     <Link href={publicCollectionHref} className={pill}>
                       공개 수집 보기
                     </Link>
-                    <button type="button" onClick={() => onChange("collection")} className={pill}>
-                      내 수집 관리(로그인)
-                    </button>
+                    {isLoggedIn ? (
+                      <button type="button" onClick={() => onChange("collection")} className={pill}>
+                        내 수집 관리
+                      </button>
+                    ) : (
+                      <Link href="/login?next=/?tab=collection" className={pill}>
+                        내 수집 관리(로그인)
+                      </Link>
+                    )}
                   </div>
                   <div className="mt-3 text-xs text-zinc-500 dark:text-white/45">
                     공개 페이지는 누구나 볼 수 있고, 수정/추가는 로그인한 본인만 가능해.
@@ -238,19 +261,22 @@ export default function HomeClient({
             {/* 프로필 미리보기 */}
             <section className="scroll-mt-24">
               <div className="flex items-end justify-between">
-                <h2 className={`text-2xl font-semibold ${title}`}>프로필 미리보기</h2>
+                <h2 className={`text-2xl font-semibold ${title}`}>내 프로필</h2>
                 <button type="button" onClick={() => onChange("profile")} className={linkText}>
-                  전체 보기 →
+                  설정 →
                 </button>
               </div>
               <div className="mt-4">
                 <GlassCard className="p-6">
-                  <div className={`text-sm ${sub}`}>나의 덕질 상태</div>
+                  <div className={`text-sm ${sub}`}>수집 취향 · 공개 설정</div>
                   <div className={`mt-2 text-lg font-semibold ${title}`}>
-                    좋아하는 포인트 / 취향 태그를 정리해두면 기록이 더 재밌어짐
+                    수집 취향을 적어두고, 내 수집품을 공개할지 설정할 수 있어
+                  </div>
+                  <div className={`mt-2 text-sm ${sub}`}>
+                    공개로 설정하면 탐색 페이지에 내 수집품이 노출되고 다른 사람이 가격 제안을 할 수 있어.
                   </div>
                   <button type="button" onClick={() => onChange("profile")} className={`mt-5 ${pill}`}>
-                    프로필 수정하러 가기
+                    프로필 설정하기
                   </button>
                 </GlassCard>
               </div>
@@ -259,7 +285,7 @@ export default function HomeClient({
         )}
 
         {tab === "gallery" && <Gallery items={character.gallery} characterName={character.name} />}
-        {tab === "collection" && <Collection character={charId} onCharChange={onCharChange} />}
+        {tab === "collection" && <Collection />}
         {tab === "profile" && <Profile />}
       </div>
       <Footer />
