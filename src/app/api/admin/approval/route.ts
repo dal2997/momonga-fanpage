@@ -101,27 +101,61 @@ export async function POST(req: Request) {
 
     // ── 초대코드 발급 ────────────────────────────────────────────────────
     if (action === "issue") {
-      // TODO: invite_codes 테이블 스키마 확정 후 구현
-      // 예시: INSERT INTO invite_codes (code, issued_to, issued_by) VALUES (...)
-      // const code = crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase();
-      // const { error } = await supabase.from("invite_codes").insert({ code, issued_to: userId, issued_by: u.user.id });
-      return NextResponse.json(
-        { ok: false, error: "issue action: invite_codes 테이블 스키마 확정 후 구현 필요" },
-        { status: 501 }
+      const { data: rpcData, error: rpcErr } = await supabase.rpc(
+        "admin_issue_invite_code",
+        { p_issued_to: userId, p_expires_days: null }
       );
+      if (rpcErr) throw rpcErr;
+
+      const result = rpcData as { success: boolean; code?: string; error?: string };
+      if (!result.success) {
+        return NextResponse.json({ ok: false, error: result.error ?? "코드 발급 실패" }, { status: 400 });
+      }
+
+      return NextResponse.json({ ok: true, code: result.code });
     }
 
     // ── 초대코드 메일 발송 ───────────────────────────────────────────────
     if (action === "send") {
-      // TODO: invite_codes 테이블에서 해당 유저의 최근 코드를 조회 후 메일 발송
-      // const { data: invite } = await supabase.from("invite_codes").select("code").eq("issued_to", userId).order("created_at", { ascending: false }).limit(1).maybeSingle();
-      // if (!invite) return NextResponse.json({ ok: false, error: "발급된 코드 없음" }, { status: 404 });
-      // const email = await adminGetUserEmail(supabase, userId);
-      // await sendWithResend(email, `[${APP_NAME}] 초대 코드`, `코드: ${invite.code}`);
-      return NextResponse.json(
-        { ok: false, error: "send action: invite_codes 테이블 스키마 확정 후 구현 필요" },
-        { status: 501 }
-      );
+      // 해당 유저에게 발급된 최신 미사용 코드 조회
+      const { data: invite, error: invErr } = await supabase
+        .from("invite_codes")
+        .select("code")
+        .eq("issued_to", userId)
+        .is("used_by", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (invErr) throw invErr;
+      if (!invite?.code) {
+        return NextResponse.json(
+          { ok: false, error: "발급된 초대 코드가 없어. 먼저 코드를 발급해줘." },
+          { status: 404 }
+        );
+      }
+
+      const email = await adminGetUserEmail(supabase, userId);
+      if (!email) {
+        return NextResponse.json({ ok: false, error: "이메일 주소를 찾을 수 없어." }, { status: 404 });
+      }
+
+      const siteUrl = getSiteUrl();
+      const subject = `[${APP_NAME}] 초대 코드가 도착했어요`;
+      const html = `
+        <div style="font-family:Arial,sans-serif;line-height:1.6;max-width:480px">
+          <h2 style="font-size:20px">Momonga 초대 코드 🐿️</h2>
+          <p>아래 코드를 입력하면 수집 기능을 사용할 수 있어요.</p>
+          <div style="margin:20px 0;padding:16px 24px;background:#f4f4f4;border-radius:12px;font-size:22px;font-weight:bold;letter-spacing:2px;text-align:center">
+            ${invite.code}
+          </div>
+          ${siteUrl ? `<div style="margin-top:20px"><a href="${siteUrl}/redeem" style="background:#111;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:13px">코드 입력하러 가기</a></div>` : ""}
+          <p style="color:#999;font-size:12px;margin-top:24px">이 메일은 관리자가 발송했습니다.</p>
+        </div>
+      `;
+
+      await sendWithResend(email, subject, html);
+      return NextResponse.json({ ok: true });
     }
 
     return NextResponse.json({ ok: false, error: "unknown action" }, { status: 400 });

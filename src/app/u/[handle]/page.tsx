@@ -5,9 +5,16 @@ import { createClient } from "@supabase/supabase-js";
 import PublicCollectionGrid from "@/components/PublicCollectionGrid";
 import OwnerManageButton from "@/components/OwnerManageButton";
 import PublicStatsSummary from "@/components/PublicStatsSummary";
-import { CHARACTERS, safeCharId, type CharacterId } from "@/data/characters";
-
+import ShareButton from "@/components/ShareButton";
+import ViewTracker from "@/components/ViewTracker";
+import { SITE_URL } from "@/lib/config";
 type ViewTab = "all" | "collecting" | "collected";
+
+type CategoryRow = {
+  id: string;
+  name: string;
+  emoji: string;
+};
 
 type ProfileRow = {
   id: string;
@@ -15,6 +22,7 @@ type ProfileRow = {
   display_name: string | null;
   avatar_url: string | null;
   is_public: boolean;
+  view_count: number;
 };
 
 export type CollectionRow = {
@@ -25,7 +33,9 @@ export type CollectionRow = {
   link: string | null;
   original_price: number | null;
   used_price: number | null;
+  sale_price: number | null;
   status: "collecting" | "collected";
+  source_type: "official" | "unknown" | null;
   my_image: string | null;
   my_memo: string | null;
   created_at: string;
@@ -52,15 +62,14 @@ function getSupabaseServer() {
 
 export default async function PublicUserPage(props: {
   params: Promise<{ handle: string }>;
-  searchParams?: Promise<{ tab?: string; char?: string }>;
+  searchParams?: Promise<{ tab?: string; cat?: string }>;
 }) {
   const params = await props.params;
   const searchParams = await props.searchParams;
 
   const handle = decodeURIComponent(params.handle ?? "").trim();
   const tab = safeTab(searchParams?.tab);
-  const charId: CharacterId = safeCharId(searchParams?.char);
-  const character = CHARACTERS.find((c) => c.id === charId)!;
+  const catParam = searchParams?.cat ?? null;
 
   if (!handle) notFound();
 
@@ -76,7 +85,7 @@ export default async function PublicUserPage(props: {
   // - 비공개면: (RLS에서) 본인이 아니면 애초에 profile이 안 내려옴 => notFound
   const { data: profile, error: profileErr } = await supabase
     .from("profiles")
-    .select("id, handle, display_name, avatar_url, is_public")
+    .select("id, handle, display_name, avatar_url, is_public, view_count")
     .eq("handle", handle)
     .maybeSingle<ProfileRow>();
 
@@ -87,24 +96,42 @@ export default async function PublicUserPage(props: {
   if (!profile) notFound();
 
   // =========================
-  // 2) 컬렉션
+  // 2) 카테고리 목록
   // =========================
-  // ✅ 읽기 권한은 RLS가 처리:
-  // - 공개 프로필이면 누구나 select 가능
-  // - 비공개면 본인만 select 가능
-  const { data: rows, error: rowsErr } = await supabase
+  const { data: catRows } = await supabase
+    .from("categories")
+    .select("id, name, emoji")
+    .eq("owner_id", profile.id)
+    .order("sort_order", { ascending: true })
+    .returns<CategoryRow[]>();
+
+  const userCategories: CategoryRow[] = catRows ?? [];
+
+  // URL ?cat= 파라미터: "all" 또는 특정 카테고리 ID
+  // 기본값(파라미터 없음) = "all" (전체 보기)
+  const catIsAll = !catParam || catParam === "all";
+  const activeCat: CategoryRow | null = catIsAll
+    ? null
+    : (userCategories.find((c) => c.id === catParam) ?? null);
+
+  // =========================
+  // 3) 컬렉션
+  // =========================
+  let collectionQuery = supabase
     .from("collections")
     .select(
-      "id, owner_id, title, image, link, original_price, used_price, status, my_image, my_memo, created_at"
+      "id, owner_id, title, image, link, original_price, used_price, sale_price, status, source_type, my_image, my_memo, created_at"
     )
     .eq("owner_id", profile.id)
-    .eq("character", charId)
-    .order("created_at", { ascending: false })
-    .returns<CollectionRow[]>();
+    .order("created_at", { ascending: false });
 
-  // 비공개인데 남이 접근하면 보통 rowsErr 혹은 rows가 null/[]로 떨어질 수 있음.
-  // 프로필이 이미 내려왔다는 건 (RLS 기준) 접근 가능한 상태라서,
-  // 여기서는 실패해도 "빈 배열"로 안전 처리.
+  // 전체(all)면 카테고리 필터 없이 전부 가져옴
+  if (!catIsAll && activeCat) {
+    collectionQuery = collectionQuery.eq("category_id", activeCat.id);
+  }
+
+  const { data: rows, error: rowsErr } = await collectionQuery.returns<CollectionRow[]>();
+
   const all = rowsErr ? [] : rows ?? [];
 
   const filtered = tab === "all" ? all : all.filter((r) => r.status === tab);
@@ -185,6 +212,8 @@ export default async function PublicUserPage(props: {
 
   return (
     <main className="relative">
+      {/* 조회수 카운터 — 클라이언트에서 1.5초 후 API 호출 */}
+      <ViewTracker handle={handle} />
       <section className="mx-auto max-w-6xl px-5 pt-24 pb-24">
         {/* 상단 돌아가기 */}
         <div className="mb-5 flex items-center justify-between">
@@ -212,32 +241,42 @@ export default async function PublicUserPage(props: {
           points={points}
         />
 
-        {/* ── 캐릭터 탭 */}
-        <div className="mt-10 mb-2 flex items-center gap-2 flex-wrap">
-          {CHARACTERS.map((c) => {
-            const active = c.id === charId;
-            return (
-              <Link
-                key={c.id}
-                href={`/u/${encodeURIComponent(profile.handle)}?char=${c.id}&tab=${tab}`}
-                className={[
-                  "inline-flex items-center gap-2 rounded-2xl border px-5 py-2.5 text-sm font-medium transition",
-                  active
-                    ? "border-black/20 bg-black/10 text-zinc-900 shadow-[0_8px_24px_rgba(0,0,0,0.10)] dark:border-white/20 dark:bg-white/12 dark:text-white dark:shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
-                    : "border-black/10 bg-black/[0.03] text-zinc-500 hover:bg-black/[0.06] hover:text-zinc-800 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/40 dark:hover:bg-white/[0.07] dark:hover:text-white/70",
-                ].join(" ")}
-              >
-                <span className="text-base">{c.emoji}</span>
-                <span>{c.name}</span>
-                {active && (
-                  <span className="ml-0.5 rounded-full bg-black/10 px-1.5 py-0.5 text-xs dark:bg-white/10">
-                    보는중
-                  </span>
-                )}
-              </Link>
-            );
-          })}
-        </div>
+        {/* ── 카테고리 탭 */}
+        {userCategories.length > 0 && (
+          <div className="mt-10 mb-2 flex items-center gap-2 flex-wrap">
+            {/* 전체 탭 */}
+            <Link
+              href={`/u/${encodeURIComponent(profile.handle)}?cat=all&tab=${tab}`}
+              className={[
+                "inline-flex items-center gap-2 rounded-2xl border px-5 py-2.5 text-sm font-medium transition",
+                catIsAll
+                  ? "border-black/20 bg-black/10 text-zinc-900 shadow-[0_8px_24px_rgba(0,0,0,0.10)] dark:border-white/20 dark:bg-white/12 dark:text-white dark:shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
+                  : "border-black/10 bg-black/[0.03] text-zinc-500 hover:bg-black/[0.06] hover:text-zinc-800 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/40 dark:hover:bg-white/[0.07] dark:hover:text-white/70",
+              ].join(" ")}
+            >
+              전체
+            </Link>
+
+            {userCategories.map((c) => {
+              const active = !catIsAll && c.id === activeCat?.id;
+              return (
+                <Link
+                  key={c.id}
+                  href={`/u/${encodeURIComponent(profile.handle)}?cat=${c.id}&tab=${tab}`}
+                  className={[
+                    "inline-flex items-center gap-2 rounded-2xl border px-5 py-2.5 text-sm font-medium transition",
+                    active
+                      ? "border-black/20 bg-black/10 text-zinc-900 shadow-[0_8px_24px_rgba(0,0,0,0.10)] dark:border-white/20 dark:bg-white/12 dark:text-white dark:shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
+                      : "border-black/10 bg-black/[0.03] text-zinc-500 hover:bg-black/[0.06] hover:text-zinc-800 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/40 dark:hover:bg-white/[0.07] dark:hover:text-white/70",
+                  ].join(" ")}
+                >
+                  <span className="text-base">{c.emoji}</span>
+                  <span>{c.name}</span>
+                </Link>
+              );
+            })}
+          </div>
+        )}
 
         {/* Header */}
         <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -270,6 +309,11 @@ export default async function PublicUserPage(props: {
               <p className="text-sm text-zinc-600 dark:text-white/60">
                 @{profile.handle} · 수집중 {collectingCount} · 수집완료{" "}
                 {collectedCount}
+                {profile.view_count > 0 && (
+                  <span className="ml-2 text-zinc-400 dark:text-white/30">
+                    · 조회 {profile.view_count.toLocaleString()}
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -295,7 +339,7 @@ export default async function PublicUserPage(props: {
               return (
                 <Link
                   key={t}
-                  href={`/u/${encodeURIComponent(profile.handle)}?char=${charId}&tab=${t}`}
+                  href={`/u/${encodeURIComponent(profile.handle)}?cat=${catIsAll ? "all" : (activeCat?.id ?? "all")}&tab=${t}`}
                   className={[
                     tabBase,
                     active ? tabLightActive : tabLightInactive,
@@ -326,12 +370,19 @@ export default async function PublicUserPage(props: {
 
             {/* ✅ OwnerManageButton 내부에서 본인 여부 판정(현재 로그인 uid === ownerId)해서 버튼 숨기는 구조면 그대로 OK */}
             <OwnerManageButton ownerId={profile.id} />
+
+            {/* 공유 버튼 */}
+            <ShareButton
+              url={`${SITE_URL}/u/${encodeURIComponent(profile.handle)}`}
+              title={`${profile.display_name ?? profile.handle}의 수집 | momonga`}
+              text={`momonga.app에서 ${profile.display_name ?? profile.handle}님의 수집품을 구경해봐 🐿️`}
+            />
           </div>
         </div>
 
         {/* Grid */}
         <div className="mt-8">
-          <PublicCollectionGrid items={filtered} />
+          <PublicCollectionGrid items={filtered} ownerHandle={profile.handle} />
         </div>
 
         {filtered.length === 0 && (

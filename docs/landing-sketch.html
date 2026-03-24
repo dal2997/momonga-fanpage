@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>momonga — 모으는 즐거움, 기록하는 설렘</title>
+  <style>
+    /* ─── Reset & Base ─── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
+      background: #fdf8f3;
+      color: #1a1a1a;
+      overflow-x: hidden;
+    }
+
+    /* ─── Design Tokens ─── */
+    :root {
+      --pink:    #ff6b9d;
+      --orange:  #ff9f5a;
+      --yellow:  #ffcc44;
+      --mint:    #4ecdc4;
+      --purple:  #a78bfa;
+      --cream:   #fdf8f3;
+      --dark:    #1a1a1a;
+      --card-bg: #ffffff;
+      --r: 24px;
+    }
+
+    /* ─── Utility ─── */
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+    .badge {
+      display: inline-block;
+      background: var(--yellow);
+      color: #1a1a1a;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 99px;
+      letter-spacing: .04em;
+    }
+    .btn-primary {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--dark);
+      color: #fff;
+      font-size: 15px; font-weight: 600;
+      padding: 14px 28px;
+      border-radius: 99px;
+      text-decoration: none;
+      transition: transform .15s, box-shadow .15s;
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+    .btn-outline {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: transparent;
+      color: var(--dark);
+      font-size: 15px; font-weight: 600;
+      padding: 13px 28px;
+      border-radius: 99px;
+      border: 2px solid var(--dark);
+      text-decoration: none;
+      transition: background .15s, color .15s;
+    }
+    .btn-outline:hover { background: var(--dark); color: #fff; }
+    .section-label {
+      font-size: 12px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; opacity: .45; margin-bottom: 12px;
+    }
+    .section-title {
+      font-size: clamp(28px, 4vw, 44px);
+      font-weight: 800; line-height: 1.2;
+    }
+
+    /* ─── Nav ─── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: rgba(253,248,243,.88);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid rgba(0,0,0,.06);
+    }
+    .nav-inner {
+      display: flex; align-items: center; justify-content: space-between;
+      height: 60px; max-width: 1100px; margin: 0 auto; padding: 0 24px;
+    }
+    .nav-logo { font-size: 20px; font-weight: 900; letter-spacing: -.02em; text-decoration: none; color: inherit; }
+    .nav-logo span { color: var(--pink); }
+    .nav-links { display: flex; gap: 32px; list-style: none; }
+    .nav-links a { text-decoration: none; color: inherit; font-size: 14px; font-weight: 500; opacity: .7; }
+    .nav-links a:hover { opacity: 1; }
+    .nav-cta { font-size: 14px; font-weight: 700; padding: 9px 20px; }
+
+    /* ─── Hero ─── */
+    .hero {
+      padding: 140px 24px 100px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero-bg-blob {
+      position: absolute; border-radius: 50%; filter: blur(80px); opacity: .35; pointer-events: none;
+    }
+    .blob1 { width: 500px; height: 500px; background: var(--pink); top: -100px; left: -100px; }
+    .blob2 { width: 400px; height: 400px; background: var(--orange); top: 50px; right: -80px; }
+    .blob3 { width: 350px; height: 350px; background: var(--purple); bottom: -80px; left: 30%; }
+    .hero-content { position: relative; z-index: 1; }
+    .hero-eyebrow { margin-bottom: 24px; }
+    .hero-title {
+      font-size: clamp(40px, 7vw, 76px);
+      font-weight: 900;
+      line-height: 1.1;
+      letter-spacing: -.03em;
+      margin-bottom: 24px;
+    }
+    .hero-title .hl-pink  { color: var(--pink); }
+    .hero-title .hl-orange{ color: var(--orange); }
+    .hero-sub {
+      font-size: clamp(16px, 2vw, 20px);
+      line-height: 1.6;
+      opacity: .65;
+      max-width: 560px;
+      margin: 0 auto 40px;
+    }
+    .hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 60px; }
+    /* Hero mock */
+    .hero-mock {
+      max-width: 860px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 32px 80px rgba(0,0,0,.12);
+      overflow: hidden;
+      border: 1px solid rgba(0,0,0,.06);
+    }
+    .mock-bar {
+      background: #f5f5f5;
+      padding: 12px 18px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .mock-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .mock-dot:nth-child(1) { background: #ff5f57; }
+    .mock-dot:nth-child(2) { background: #ffbd2e; }
+    .mock-dot:nth-child(3) { background: #28c840; }
+    .mock-url {
+      flex: 1; background: white; border-radius: 6px;
+      padding: 5px 12px; font-size: 12px; color: #888; text-align: center;
+    }
+    .mock-body { padding: 28px; }
+    .mock-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .mock-card {
+      background: #fafafa; border-radius: 16px; overflow: hidden;
+      border: 1px solid rgba(0,0,0,.06);
+      transition: transform .2s;
+    }
+    .mock-card:hover { transform: translateY(-3px); }
+    .mock-img {
+      aspect-ratio: 1; width: 100%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 40px;
+    }
+    .mock-img.c1 { background: linear-gradient(135deg, #ffe0ef, #ffd0e8); }
+    .mock-img.c2 { background: linear-gradient(135deg, #fff3cc, #ffe08a); }
+    .mock-img.c3 { background: linear-gradient(135deg, #d0f0ff, #b0e0ff); }
+    .mock-img.c4 { background: linear-gradient(135deg, #e8d0ff, #d4b8ff); }
+    .mock-info { padding: 10px 12px; }
+    .mock-name { font-size: 11px; font-weight: 600; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mock-price { font-size: 10px; opacity: .5; }
+    .mock-sold { background: var(--pink); color: white; font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 99px; display: inline-block; margin-top: 3px; }
+
+    /* ─── Stats Strip ─── */
+    .stats-strip {
+      background: var(--dark);
+      color: white;
+      padding: 48px 24px;
+    }
+    .stats-inner {
+      max-width: 1100px; margin: 0 auto;
+      display: flex; gap: 0; flex-wrap: wrap;
+    }
+    .stat {
+      flex: 1; min-width: 160px;
+      text-align: center; padding: 16px;
+      border-right: 1px solid rgba(255,255,255,.1);
+    }
+    .stat:last-child { border-right: none; }
+    .stat-num { font-size: 40px; font-weight: 900; letter-spacing: -.03em; line-height: 1; }
+    .stat-num.p { color: var(--pink); }
+    .stat-num.o { color: var(--orange); }
+    .stat-num.y { color: var(--yellow); }
+    .stat-num.m { color: var(--mint); }
+    .stat-label { font-size: 13px; opacity: .5; margin-top: 6px; }
+
+    /* ─── Features ─── */
+    .features { padding: 120px 24px; }
+    .features-header { text-align: center; margin-bottom: 72px; }
+    .features-grid {
+      max-width: 1100px; margin: 0 auto;
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
+    }
+    .feat-card {
+      background: white;
+      border-radius: var(--r);
+      padding: 36px 32px;
+      border: 1px solid rgba(0,0,0,.06);
+      box-shadow: 0 4px 16px rgba(0,0,0,.04);
+      position: relative; overflow: hidden;
+    }
+    .feat-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0;
+      height: 4px;
+    }
+    .feat-card.f1::before { background: linear-gradient(90deg, var(--pink), var(--orange)); }
+    .feat-card.f2::before { background: linear-gradient(90deg, var(--orange), var(--yellow)); }
+    .feat-card.f3::before { background: linear-gradient(90deg, var(--mint), var(--purple)); }
+    .feat-card.f4::before { background: linear-gradient(90deg, var(--purple), var(--pink)); }
+    .feat-card.f5::before { background: linear-gradient(90deg, var(--yellow), var(--mint)); }
+    .feat-card.f6::before { background: linear-gradient(90deg, var(--pink), var(--purple)); }
+    .feat-icon { font-size: 36px; margin-bottom: 20px; }
+    .feat-title { font-size: 18px; font-weight: 800; margin-bottom: 10px; }
+    .feat-desc { font-size: 14px; line-height: 1.7; opacity: .6; }
+
+    /* ─── How It Works ─── */
+    .how { background: white; padding: 120px 24px; }
+    .how-header { text-align: center; margin-bottom: 72px; }
+    .steps {
+      max-width: 900px; margin: 0 auto;
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px;
+      position: relative;
+    }
+    .steps::after {
+      content: '';
+      position: absolute; top: 36px; left: calc(100%/6); right: calc(100%/6);
+      height: 2px;
+      background: repeating-linear-gradient(90deg, #ddd 0, #ddd 6px, transparent 6px, transparent 14px);
+      pointer-events: none;
+    }
+    .step { text-align: center; position: relative; }
+    .step-num {
+      width: 72px; height: 72px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 26px; font-weight: 900;
+      margin: 0 auto 20px;
+      position: relative; z-index: 1;
+    }
+    .step-num.s1 { background: linear-gradient(135deg, var(--pink), var(--orange)); color: white; }
+    .step-num.s2 { background: linear-gradient(135deg, var(--orange), var(--yellow)); color: white; }
+    .step-num.s3 { background: linear-gradient(135deg, var(--mint), var(--purple)); color: white; }
+    .step-title { font-size: 16px; font-weight: 800; margin-bottom: 8px; }
+    .step-desc { font-size: 13px; line-height: 1.7; opacity: .55; }
+
+    /* ─── Showcase ─── */
+    .showcase { padding: 120px 24px; }
+    .showcase-header { text-align: center; margin-bottom: 72px; }
+    .profile-cards {
+      max-width: 1100px; margin: 0 auto;
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
+    }
+    .profile-card {
+      background: white;
+      border-radius: var(--r); padding: 24px;
+      border: 1px solid rgba(0,0,0,.06);
+      box-shadow: 0 4px 16px rgba(0,0,0,.04);
+    }
+    .profile-head {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
+    }
+    .profile-avatar {
+      width: 44px; height: 44px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+    }
+    .pa1 { background: linear-gradient(135deg, #ffe0ef, #ffc4e0); }
+    .pa2 { background: linear-gradient(135deg, #fff3cc, #ffe08a); }
+    .pa3 { background: linear-gradient(135deg, #d0f0ff, #9ed8ff); }
+    .profile-name { font-size: 14px; font-weight: 700; }
+    .profile-handle { font-size: 11px; opacity: .45; }
+    .profile-items {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+      margin-bottom: 16px;
+    }
+    .pi { aspect-ratio: 1; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+    .pi.a { background: #ffe0ef; }
+    .pi.b { background: #fff3cc; }
+    .pi.c { background: #d0f0ff; }
+    .pi.d { background: #e8d0ff; }
+    .pi.e { background: #d0ffe8; }
+    .pi.f { background: #ffe8d0; }
+    .pi.g { background: #f0d0ff; }
+    .pi.h { background: #d0f0ff; }
+    .profile-footer {
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .profile-count { font-size: 12px; opacity: .45; }
+    .offer-btn {
+      background: var(--dark); color: white;
+      font-size: 11px; font-weight: 700;
+      padding: 7px 14px; border-radius: 99px;
+      cursor: pointer; border: none;
+    }
+
+    /* ─── CTA ─── */
+    .cta-section {
+      padding: 120px 24px;
+      text-align: center;
+      background: var(--dark);
+      color: white;
+      position: relative; overflow: hidden;
+    }
+    .cta-blob1 { position: absolute; width: 500px; height: 500px; border-radius: 50%; filter: blur(100px); opacity: .2; }
+    .cta-blob1:nth-child(1) { background: var(--pink); top: -150px; left: -100px; }
+    .cta-blob1:nth-child(2) { background: var(--purple); bottom: -150px; right: -100px; }
+    .cta-content { position: relative; z-index: 1; }
+    .cta-mascot { font-size: 72px; margin-bottom: 24px; display: block; animation: float 3s ease-in-out infinite; }
+    @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+    .cta-title {
+      font-size: clamp(32px, 5vw, 56px);
+      font-weight: 900; line-height: 1.2;
+      margin-bottom: 16px;
+    }
+    .cta-sub { font-size: 16px; opacity: .55; margin-bottom: 40px; max-width: 440px; margin-left: auto; margin-right: auto; }
+    .cta-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .btn-white {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: white; color: var(--dark);
+      font-size: 15px; font-weight: 700;
+      padding: 14px 28px; border-radius: 99px; text-decoration: none;
+      transition: transform .15s, box-shadow .15s;
+    }
+    .btn-white:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(255,255,255,.2); }
+    .btn-ghost {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: transparent; color: white;
+      font-size: 15px; font-weight: 600;
+      padding: 13px 28px; border-radius: 99px; text-decoration: none;
+      border: 2px solid rgba(255,255,255,.35);
+      transition: border-color .15s, background .15s;
+    }
+    .btn-ghost:hover { border-color: white; background: rgba(255,255,255,.1); }
+
+    /* ─── Footer ─── */
+    footer {
+      background: #111; color: rgba(255,255,255,.4);
+      padding: 40px 24px;
+      text-align: center; font-size: 13px;
+    }
+    footer a { color: rgba(255,255,255,.6); text-decoration: none; }
+    footer a:hover { color: white; }
+    .footer-links { display: flex; gap: 20px; justify-content: center; margin-bottom: 16px; flex-wrap: wrap; }
+
+    /* ─── Responsive ─── */
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      .mock-grid { grid-template-columns: repeat(2, 1fr); }
+      .features-grid { grid-template-columns: 1fr; }
+      .steps { grid-template-columns: 1fr; }
+      .steps::after { display: none; }
+      .profile-cards { grid-template-columns: 1fr; }
+      .stats-inner { flex-direction: column; }
+      .stat { border-right: none; border-bottom: 1px solid rgba(255,255,255,.1); }
+      .stat:last-child { border-bottom: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ─── Nav ─── -->
+  <nav>
+    <div class="nav-inner">
+      <a class="nav-logo" href="#">mo<span>mon</span>ga</a>
+      <ul class="nav-links">
+        <li><a href="#features">기능</a></li>
+        <li><a href="#how">사용법</a></li>
+        <li><a href="#showcase">탐색</a></li>
+      </ul>
+      <a href="#cta" class="btn-primary nav-cta">시작하기 →</a>
+    </div>
+  </nav>
+
+  <!-- ─── Hero ─── -->
+  <section class="hero">
+    <div class="hero-bg-blob blob1"></div>
+    <div class="hero-bg-blob blob2"></div>
+    <div class="hero-bg-blob blob3"></div>
+    <div class="hero-content">
+      <div class="hero-eyebrow">
+        <span class="badge">🎉 오픈 베타 시작</span>
+      </div>
+      <h1 class="hero-title">
+        내 <span class="hl-pink">굿즈</span>를<br />
+        아름답게 <span class="hl-orange">기록</span>하고<br />
+        자랑하세요 🐿️
+      </h1>
+      <p class="hero-sub">
+        피규어, 포카, 한정판 굿즈 — 모으는 모든 것을 momonga에 담아두세요.
+        수집 현황 관리부터 다른 컬렉터와의 거래까지 한 곳에서.
+      </p>
+      <div class="hero-actions">
+        <a href="#cta" class="btn-primary">무료로 시작하기 →</a>
+        <a href="#showcase" class="btn-outline">다른 수집가 구경하기</a>
+      </div>
+
+      <!-- App Mock -->
+      <div class="hero-mock">
+        <div class="mock-bar">
+          <div class="mock-dot"></div>
+          <div class="mock-dot"></div>
+          <div class="mock-dot"></div>
+          <div class="mock-url">momonga.app/u/dal2997</div>
+        </div>
+        <div class="mock-body">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+            <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#ffe0ef,#ffc4e0);display:flex;align-items:center;justify-content:center;font-size:24px;">🐿️</div>
+            <div>
+              <div style="font-weight:700;font-size:15px;">dal2997의 수집</div>
+              <div style="font-size:12px;opacity:.45;">수집중 24개 · 완료 58개</div>
+            </div>
+            <div style="margin-left:auto;background:#fff3cc;border-radius:99px;padding:6px 16px;font-size:12px;font-weight:700;color:#a07800;">총 가치 1,240,000원</div>
+          </div>
+          <div class="mock-grid">
+            <div class="mock-card">
+              <div class="mock-img c1">🧸</div>
+              <div class="mock-info">
+                <div class="mock-name">모몽가 인형 L</div>
+                <div class="mock-price">원가 35,000원</div>
+                <div class="mock-sold">판매 희망가 50,000원</div>
+              </div>
+            </div>
+            <div class="mock-card">
+              <div class="mock-img c2">🎠</div>
+              <div class="mock-info">
+                <div class="mock-name">산리오 피규어 한정</div>
+                <div class="mock-price">원가 18,000원</div>
+              </div>
+            </div>
+            <div class="mock-card">
+              <div class="mock-img c3">🎪</div>
+              <div class="mock-info">
+                <div class="mock-name">팝마트 블라인드박스</div>
+                <div class="mock-price">원가 12,000원</div>
+              </div>
+            </div>
+            <div class="mock-card">
+              <div class="mock-img c4">💌</div>
+              <div class="mock-info">
+                <div class="mock-name">아이돌 포카 세트</div>
+                <div class="mock-price">중고 시세 22,000원</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── Stats ─── -->
+  <section class="stats-strip">
+    <div class="stats-inner">
+      <div class="stat">
+        <div class="stat-num p">5,000+</div>
+        <div class="stat-label">등록된 수집품</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num o">500+</div>
+        <div class="stat-label">활성 컬렉터</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num y">1,200+</div>
+        <div class="stat-label">거래 성사</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num m">98%</div>
+        <div class="stat-label">만족도</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── Features ─── -->
+  <section class="features" id="features">
+    <div class="features-header container">
+      <div class="section-label">Features</div>
+      <h2 class="section-title">수집의 모든 순간을<br />한 곳에서</h2>
+    </div>
+    <div class="features-grid">
+      <div class="feat-card f1">
+        <div class="feat-icon">📸</div>
+        <div class="feat-title">이미지 중심 관리</div>
+        <div class="feat-desc">공식 이미지와 내 사진을 따로 올려요. 텍스트 대신 이미지로 한눈에 내 수집을 파악하세요.</div>
+      </div>
+      <div class="feat-card f2">
+        <div class="feat-icon">💰</div>
+        <div class="feat-title">가치 추적</div>
+        <div class="feat-desc">원가, 중고 시세, 판매 희망가를 입력하면 내 수집품의 총 가치를 자동으로 계산해줘요.</div>
+      </div>
+      <div class="feat-card f3">
+        <div class="feat-icon">🌐</div>
+        <div class="feat-title">공개 프로필 페이지</div>
+        <div class="feat-desc">momonga.app/u/나의핸들 — 내 수집을 갤러리처럼 공유하세요. SNS 링크 하나로 자랑 끝.</div>
+      </div>
+      <div class="feat-card f4">
+        <div class="feat-icon">💬</div>
+        <div class="feat-title">오퍼(제안) 시스템</div>
+        <div class="feat-desc">마음에 드는 수집품을 발견하면 바로 구매 제안을 보내세요. 개인정보 없이 안전하게.</div>
+      </div>
+      <div class="feat-card f5">
+        <div class="feat-icon">🔔</div>
+        <div class="feat-title">실시간 알림</div>
+        <div class="feat-desc">새 오퍼가 들어오면 즉시 알림. 수락·거절·거래 완료까지 앱 안에서 모두 처리해요.</div>
+      </div>
+      <div class="feat-card f6">
+        <div class="feat-icon">🗂️</div>
+        <div class="feat-title">카테고리 & 정렬</div>
+        <div class="feat-desc">내가 정한 카테고리로 분류하고, 드래그로 순서 변경. 내 방식대로 정리하세요.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── How It Works ─── -->
+  <section class="how" id="how">
+    <div class="how-header container">
+      <div class="section-label">How it works</div>
+      <h2 class="section-title">3단계로 시작하세요</h2>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num s1">1</div>
+        <div class="step-title">수집품을 등록해요</div>
+        <div class="step-desc">이름, 이미지, 가격을 입력하면 끝. 카테고리를 만들어 분류까지 해두세요.</div>
+      </div>
+      <div class="step">
+        <div class="step-num s2">2</div>
+        <div class="step-title">공개 페이지를 공유해요</div>
+        <div class="step-desc">나만의 링크로 수집 현황을 갤러리처럼 보여주세요. 팔로워들이 반할 거예요.</div>
+      </div>
+      <div class="step">
+        <div class="step-num s3">3</div>
+        <div class="step-title">거래하고 완성해요</div>
+        <div class="step-desc">다른 컬렉터가 보낸 오퍼를 확인하고 수락하면 거래 완료. 수집품이 새 주인을 만나요.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── Showcase ─── -->
+  <section class="showcase" id="showcase">
+    <div class="showcase-header container">
+      <div class="section-label">Showcase</div>
+      <h2 class="section-title">이미 모으고 있는 사람들</h2>
+    </div>
+    <div class="profile-cards">
+      <div class="profile-card">
+        <div class="profile-head">
+          <div class="profile-avatar pa1">🐿️</div>
+          <div>
+            <div class="profile-name">dal2997</div>
+            <div class="profile-handle">모몽가 덕후 · 82개 수집</div>
+          </div>
+        </div>
+        <div class="profile-items">
+          <div class="pi a">🧸</div>
+          <div class="pi b">🎪</div>
+          <div class="pi c">💌</div>
+          <div class="pi d">🎠</div>
+        </div>
+        <div class="profile-footer">
+          <span class="profile-count">+78개 더보기</span>
+          <button class="offer-btn">💬 제안</button>
+        </div>
+      </div>
+      <div class="profile-card">
+        <div class="profile-head">
+          <div class="profile-avatar pa2">🌻</div>
+          <div>
+            <div class="profile-name">sunflower99</div>
+            <div class="profile-handle">팝마트 전문 · 41개 수집</div>
+          </div>
+        </div>
+        <div class="profile-items">
+          <div class="pi e">🎭</div>
+          <div class="pi f">🎨</div>
+          <div class="pi g">🌈</div>
+          <div class="pi h">🦋</div>
+        </div>
+        <div class="profile-footer">
+          <span class="profile-count">+37개 더보기</span>
+          <button class="offer-btn">💬 제안</button>
+        </div>
+      </div>
+      <div class="profile-card">
+        <div class="profile-head">
+          <div class="profile-avatar pa3">🐕</div>
+          <div>
+            <div class="profile-name">corgifan</div>
+            <div class="profile-handle">산리오 덕후 · 67개 수집</div>
+          </div>
+        </div>
+        <div class="profile-items">
+          <div class="pi b">🎀</div>
+          <div class="pi a">🌸</div>
+          <div class="pi d">🍓</div>
+          <div class="pi c">🍬</div>
+        </div>
+        <div class="profile-footer">
+          <span class="profile-count">+63개 더보기</span>
+          <button class="offer-btn">💬 제안</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── CTA ─── -->
+  <section class="cta-section" id="cta">
+    <div class="cta-blob1"></div>
+    <div class="cta-blob1"></div>
+    <div class="cta-content">
+      <span class="cta-mascot">🐿️</span>
+      <h2 class="cta-title">지금 모으고 있는 거,<br />오늘부터 기록하세요</h2>
+      <p class="cta-sub">초대코드 없이도 베타 참여 가능. 무료로 시작하고 언제든 업그레이드.</p>
+      <div class="cta-actions">
+        <a href="https://momonga.app" class="btn-white">🐿️ momonga 시작하기</a>
+        <a href="https://momonga.app/browse" class="btn-ghost">탐색 페이지 구경하기 →</a>
+      </div>
+      <p style="margin-top:32px;font-size:12px;opacity:.3;">광고 없음 · 무료 시작 · 언제든 탈퇴 가능</p>
+    </div>
+  </section>
+
+  <!-- ─── Footer ─── -->
+  <footer>
+    <div class="footer-links">
+      <a href="/legal/terms">이용약관</a>
+      <a href="/legal/privacy">개인정보처리방침</a>
+      <a href="/legal/fansite">팬사이트 고지</a>
+      <a href="mailto:hello@momonga.app">문의</a>
+    </div>
+    <p>© 2026 momonga. Made with 🐿️ for collectors.</p>
+  </footer>
+
+</body>
+</html>

@@ -50,7 +50,7 @@ export default function OwnerManageButton({ ownerId }: { ownerId: string }) {
 
   return (
     <Link
-      href="/collection"
+      href="/?tab=collection"
       className={[
         "group relative ml-2 inline-flex items-center gap-2 overflow-hidden rounded-full px-4 py-2 text-sm",
 

@@ -17,7 +17,7 @@ type ProfileRow = {
   approved_at: string | null;
 };
 
-type Tab = "pending" | "approved" | "banned";
+type Tab = "pending" | "approved" | "banned" | "stats";
 
 const PROFILE_SELECT =
   "id,handle,display_name,avatar_url,is_public,is_admin,is_approved,is_banned,ban_reason,approved_at";
@@ -35,6 +35,11 @@ export default function AdminClient() {
 
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  // 통계 탭
+  const [dailyStats, setDailyStats] = useState<{ date: string; total: number }[]>([]);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [topProfiles, setTopProfiles] = useState<{ handle: string; view_count: number }[]>([]);
 
   // 공지/알림 메일용 (승인된 유저 전체)
   const [noticeSubject, setNoticeSubject] = useState("");
@@ -84,7 +89,35 @@ export default function AdminClient() {
     setLoadingMe(false);
   }
 
+  async function loadStats() {
+    setStatsLoading(true);
+    try {
+      // 최근 30일 일별 합산
+      const { data: daily } = await supabase.rpc("get_daily_visits", { p_days: 30 });
+      if (Array.isArray(daily)) {
+        setDailyStats(
+          daily.map((r: { date: string; total: number }) => ({
+            date: r.date,
+            total: Number(r.total),
+          }))
+        );
+      }
+      // 전체 누적 TOP 10
+      const { data: tops } = await supabase
+        .from("profiles")
+        .select("handle, view_count")
+        .eq("is_public", true)
+        .order("view_count", { ascending: false })
+        .limit(10);
+      if (Array.isArray(tops)) setTopProfiles(tops as { handle: string; view_count: number }[]);
+    } catch (e) {
+      console.error("[stats] load error:", e);
+    }
+    setStatsLoading(false);
+  }
+
   async function loadList(nextTab: Tab = tab) {
+    if (nextTab === "stats") { await loadStats(); return; }
     setLoadingList(true);
     clearFlash();
 
@@ -289,7 +322,7 @@ export default function AdminClient() {
   if (err) return <div className="p-6 text-sm text-red-400">에러: {err}</div>;
   if (!me) return <div className="p-6 text-sm">세션 없음</div>;
 
-  const tabLabel = tab === "pending" ? "승인 대기" : tab === "approved" ? "승인됨" : "밴됨";
+  const tabLabel = tab === "pending" ? "승인 대기" : tab === "approved" ? "승인됨" : tab === "banned" ? "밴됨" : "통계";
 
   return (
     <main className="mx-auto max-w-4xl px-5 pt-14 pb-20">
@@ -310,7 +343,7 @@ export default function AdminClient() {
       </div>
 
       <div className="mt-6 flex flex-wrap gap-2">
-        {(["pending", "approved", "banned"] as Tab[]).map((t) => (
+        {(["pending", "approved", "banned", "stats"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={async () => {
@@ -324,7 +357,7 @@ export default function AdminClient() {
                 : "border-black/10 bg-black/5 dark:border-white/10 dark:bg-white/10",
             ].join(" ")}
           >
-            {t === "pending" ? "승인 대기" : t === "approved" ? "승인됨" : "밴됨"}
+            {t === "pending" ? "승인 대기" : t === "approved" ? "승인됨" : t === "banned" ? "밴됨" : "📊 통계"}
           </button>
         ))}
       </div>
@@ -364,7 +397,100 @@ export default function AdminClient() {
         </section>
       )}
 
-      <section className="mt-8">
+      {/* 통계 탭 */}
+      {tab === "stats" && (
+        <section className="mt-8 space-y-8">
+          <h2 className="text-lg font-semibold">📊 방문자 통계</h2>
+          {statsLoading ? (
+            <p className="text-sm text-zinc-400">불러오는 중…</p>
+          ) : (
+            <>
+              {/* 최근 30일 일별 방문자 */}
+              <div className="rounded-2xl border border-black/10 bg-white/60 p-5 dark:border-white/10 dark:bg-white/5">
+                <h3 className="mb-4 text-sm font-semibold text-zinc-700 dark:text-white/70">
+                  최근 30일 일별 방문자
+                </h3>
+                {dailyStats.length === 0 ? (
+                  <p className="text-xs text-zinc-400 dark:text-white/30">
+                    데이터 없음 (마이그레이션 006 실행 후 방문자가 쌓이면 표시돼요)
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    {/* 막대 차트 (CSS) */}
+                    <div className="flex items-end gap-1 h-28 mb-3">
+                      {(() => {
+                        const max = Math.max(...dailyStats.map((d) => d.total), 1);
+                        return dailyStats.map((d) => (
+                          <div
+                            key={d.date}
+                            title={`${d.date}: ${d.total}명`}
+                            className="flex-1 min-w-0 rounded-t bg-pink-400/70 dark:bg-pink-400/50 transition-all hover:bg-pink-500/80"
+                            style={{ height: `${Math.max(4, (d.total / max) * 100)}%` }}
+                          />
+                        ));
+                      })()}
+                    </div>
+                    {/* 날짜 테이블 */}
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-zinc-400 dark:text-white/30">
+                          <th className="py-1 text-left">날짜</th>
+                          <th className="py-1 text-right">방문자</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...dailyStats].reverse().map((d) => (
+                          <tr key={d.date} className="border-t border-black/5 dark:border-white/5">
+                            <td className="py-1 text-zinc-600 dark:text-white/50">{d.date}</td>
+                            <td className="py-1 text-right font-medium text-zinc-800 dark:text-white/80">
+                              {d.total.toLocaleString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* 인기 프로필 TOP 10 */}
+              <div className="rounded-2xl border border-black/10 bg-white/60 p-5 dark:border-white/10 dark:bg-white/5">
+                <h3 className="mb-4 text-sm font-semibold text-zinc-700 dark:text-white/70">
+                  🏆 인기 프로필 TOP 10 (누적 조회)
+                </h3>
+                {topProfiles.length === 0 ? (
+                  <p className="text-xs text-zinc-400 dark:text-white/30">데이터 없음</p>
+                ) : (
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-zinc-400 dark:text-white/30">
+                        <th className="py-1 text-left">순위</th>
+                        <th className="py-1 text-left">핸들</th>
+                        <th className="py-1 text-right">누적 조회</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {topProfiles.map((p, i) => (
+                        <tr key={p.handle} className="border-t border-black/5 dark:border-white/5">
+                          <td className="py-1 text-zinc-400 dark:text-white/30">
+                            {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}위`}
+                          </td>
+                          <td className="py-1 text-zinc-700 dark:text-white/70">@{p.handle}</td>
+                          <td className="py-1 text-right font-medium text-zinc-800 dark:text-white/80">
+                            {p.view_count.toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
+      {tab !== "stats" && <section className="mt-8">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">{tabLabel}</h2>
           <div className="text-sm text-zinc-600 dark:text-white/60">
@@ -476,7 +602,7 @@ export default function AdminClient() {
             </div>
           ))}
         </div>
-      </section>
+      </section>}
     </main>
   );
 }

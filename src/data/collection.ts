@@ -2,6 +2,9 @@ export type CollectStatus = "collecting" | "collected";
 
 export type PriceOptional = number | null;
 
+/** 출처 태그: 공식 이미지인지 출처불명인지 */
+export type SourceType = "official" | "unknown" | null;
+
 export type CollectItem = {
   id: string;
   title: string;
@@ -11,8 +14,12 @@ export type CollectItem = {
   // 가격은 "선택"
   originalPrice?: PriceOptional; // 원가
   usedPrice?: PriceOptional;     // 중고가
+  salePrice?: PriceOptional;     // 판매 희망가 (수집완료 시 설정 가능)
 
   status: CollectStatus;
+
+  /** 출처 태그 */
+  sourceType?: SourceType;
 
   // collected로 옮길 때(내 사진/메모)
   myImage?: string | null; // 로컬에서 업로드한 이미지(base64 등) or URL

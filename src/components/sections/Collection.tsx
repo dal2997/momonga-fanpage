@@ -3,12 +3,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import GlassCard from "@/components/layout/GlassCard";
 import { CollectItem } from "@/data/collection";
-import { CHARACTERS, type CharacterId } from "@/data/characters";
+import CollageModal from "@/components/CollageModal";
 import {
   fetchCollection,
+  fetchCategories,
+  insertCategory,
+  updateCategory,
+  deleteCategory,
+  reorderCategories,
   insertCollectItem,
   updateCollectItem,
   deleteCollectItem,
+  type Category,
 } from "@/lib/collectionService";
 import {
   uploadToMomongaBucket,
@@ -67,20 +73,36 @@ function withTimeout<T>(p: Promise<T>, ms: number, label = "timeout") {
   });
 }
 
-export default function Collection({
-  character = "momonga",
-  onCharChange,
-}: {
-  character?: CharacterId;
-  onCharChange?: (id: CharacterId) => void;
-}) {
+export default function Collection() {
   const [view, setView] = useState<ViewMode>("collecting");
   const [collecting, setCollecting] = useState<CollectItem[]>([]);
   const [collected, setCollected] = useState<CollectItem[]>([]);
   const [open, setOpen] = useState<CollectItem | null>(null);
 
+  // ── 카테고리
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
+  const categoryInitRef = React.useRef(false);
+
+  // 카테고리 추가 UI
+  const [showAddCat, setShowAddCat] = useState(false);
+  const [newCatEmoji, setNewCatEmoji] = useState("");
+  const [newCatName, setNewCatName] = useState("");
+  const [savingCat, setSavingCat] = useState(false);
+
+  // 카테고리 편집 UI
+  const [editingCatId, setEditingCatId] = useState<string | null>(null);
+  const [editCatEmoji, setEditCatEmoji] = useState("");
+  const [editCatName, setEditCatName] = useState("");
+  const [savingEditCat, setSavingEditCat] = useState(false);
+
+  // 카테고리 드래그 순서변경
+  const dragCatIdRef = useRef<string | null>(null);
+  const [dragOverCatId, setDragOverCatId] = useState<string | null>(null);
+
   // ✅ 로그인 사용자
   const [userId, setUserId] = useState<string | null>(null);
+  const [userHandle, setUserHandle] = useState<string | null>(null);
 
   // 로딩/로그인 필요
   const [loading, setLoading] = useState(true);
@@ -106,10 +128,12 @@ export default function Collection({
   const [editLink, setEditLink] = useState("");
   const [editOriginal, setEditOriginal] = useState("");
   const [editUsed, setEditUsed] = useState("");
+  const [editSalePrice, setEditSalePrice] = useState("");
 
   const [editImageMode, setEditImageMode] = useState<"url" | "upload">("url");
   const [editImageUrl, setEditImageUrl] = useState("");
   const [editImageFile, setEditImageFile] = useState<File | null>(null);
+  const [editSourceType, setEditSourceType] = useState<"official" | "unknown" | null>(null);
 
   // 수집중 추가 모달
   const [addOpen, setAddOpen] = useState(false);
@@ -117,10 +141,16 @@ export default function Collection({
   const [addLink, setAddLink] = useState("");
   const [addOriginal, setAddOriginal] = useState("");
   const [addUsed, setAddUsed] = useState("");
+  const [addSourceType, setAddSourceType] = useState<"official" | "unknown" | null>(null);
 
   const [addImageMode, setAddImageMode] = useState<"url" | "upload">("url");
   const [addImageUrl, setAddImageUrl] = useState("");
   const [addImageFile, setAddImageFile] = useState<File | null>(null);
+
+  // ── 콜라쥬 멀티선택
+  const [collageMode, setCollageMode] = useState(false);
+  const [collageSelected, setCollageSelected] = useState<Set<string>>(new Set());
+  const [collageOpen, setCollageOpen] = useState(false);
 
   // ✅ 수집완료 빠른추가 모달
   const [quickOpen, setQuickOpen] = useState(false);
@@ -174,20 +204,19 @@ export default function Collection({
       link: r.link,
       originalPrice: r.original_price,
       usedPrice: r.used_price,
+      salePrice: r.sale_price ?? null,
       status: r.status,
+      sourceType: r.source_type ?? null,
       myImage: r.my_image,
       myMemo: r.my_memo,
     };
   }, []);
 
   const refreshFromDb = useCallback(
-    async (uid: string) => {
-      const rows = await fetchCollection(uid, character);
-
+    async (uid: string, catId: string | null) => {
+      const rows = await fetchCollection(uid, catId);
       const nextCollecting = rows.filter((r: any) => r.status === "collecting").map(mapRowToItem);
-
       const nextCollected = rows.filter((r: any) => r.status === "collected").map(mapRowToItem);
-
       setCollecting(nextCollecting);
       setCollected(nextCollected);
     },
@@ -201,6 +230,7 @@ export default function Collection({
 
   const load = useCallback(async () => {
     const myReqId = ++reqIdRef.current;
+    // activeCategoryId 는 최초 초기화 이후에는 closure로 최신값 사용
 
     setLoading(true);
     setLoadErr(null);
@@ -235,7 +265,29 @@ export default function Collection({
       setUserId(uid);
       setNeedLogin(false);
 
-      await withTimeout(refreshFromDb(uid), timeoutMs);
+      // 핸들 가져오기 (공개 페이지 링크용)
+      supabase
+        .from("profiles")
+        .select("handle")
+        .eq("id", uid)
+        .maybeSingle()
+        .then(({ data }) => { if (data?.handle) setUserHandle(data.handle); });
+
+      // 카테고리 로드
+      const cats = await withTimeout(fetchCategories(uid), timeoutMs);
+      if (!aliveRef.current) return;
+      if (myReqId !== reqIdRef.current) return;
+      setCategories(cats);
+
+      // 최초 진입 시 첫 번째 카테고리 선택
+      let catId = activeCategoryId;
+      if (!categoryInitRef.current) {
+        catId = cats[0]?.id ?? null;
+        setActiveCategoryId(catId);
+        categoryInitRef.current = true;
+      }
+
+      await withTimeout(refreshFromDb(uid, catId), timeoutMs);
 
       if (!aliveRef.current) return;
       if (myReqId !== reqIdRef.current) return;
@@ -256,7 +308,7 @@ export default function Collection({
 
       setLoading(false);
     }
-  }, [refreshFromDb]);
+  }, [refreshFromDb, activeCategoryId]);
 
   // ✅ 최초 진입 + auth 변화 시 load()로 통일
   useEffect(() => {
@@ -397,6 +449,7 @@ export default function Collection({
     setAddImageMode("url");
     setAddImageUrl("");
     setAddImageFile(null);
+    setAddSourceType(null);
   }
 
   function resetQuick() {
@@ -429,10 +482,14 @@ export default function Collection({
     setEditUsed(
       item.usedPrice === null || item.usedPrice === undefined ? "" : String(item.usedPrice)
     );
+    setEditSalePrice(
+      item.salePrice === null || item.salePrice === undefined ? "" : String(item.salePrice)
+    );
 
     setEditImageMode("url");
     setEditImageUrl(item.image ?? "");
     setEditImageFile(null);
+    setEditSourceType(item.sourceType ?? null);
 
     // 수집중 -> 완료 이동용
     setMyFile(null);
@@ -526,7 +583,8 @@ export default function Collection({
         originalPrice: parsePrice(addOriginal),
         usedPrice: parsePrice(addUsed),
         status: "collecting",
-      }, character);
+        sourceType: addSourceType,
+      }, activeCategoryId);
 
       await load();
 
@@ -649,11 +707,13 @@ export default function Collection({
         image,
         originalPrice: parsePrice(editOriginal),
         usedPrice: parsePrice(editUsed),
+        sourceType: editSourceType,
       };
 
       if (open.status === "collected") {
         patch.myImage = myImage;
         patch.myMemo = nextMyMemo;
+        patch.salePrice = parsePrice(editSalePrice);
       }
 
       await updateCollectItem(userId, open.id, patch);
@@ -806,7 +866,7 @@ export default function Collection({
           status: "collected",
           myImage: myUrl,
           myMemo: quickMemo.trim() ? quickMemo.trim() : null,
-        }, character);
+        }, activeCategoryId);
       }
 
       await load();
@@ -827,53 +887,236 @@ export default function Collection({
   return (
     <section id="collection" className="scroll-mt-24">
 
-      {/* ── 캐릭터 탭 ─────────────────────────────── */}
+      {/* ── 카테고리 탭 ─────────────────────────────── */}
       <div className="mb-6 flex items-center gap-2 flex-wrap">
-        {CHARACTERS.map((c) => {
-          const active = c.id === character;
+        {categories.map((cat) => {
+          const active = cat.id === activeCategoryId;
+          const isEditing = editingCatId === cat.id;
+          const isDragOver = dragOverCatId === cat.id;
+
+          // 편집 중인 탭
+          if (isEditing) {
+            return (
+              <form
+                key={cat.id}
+                className="inline-flex items-center gap-2"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!editCatName.trim() || savingEditCat) return;
+                  setSavingEditCat(true);
+                  try {
+                    await updateCategory(userId!, cat.id, { name: editCatName, emoji: editCatEmoji || "📦" });
+                    setCategories((prev) =>
+                      prev.map((c) =>
+                        c.id === cat.id ? { ...c, name: editCatName.trim(), emoji: editCatEmoji.trim() || "📦" } : c
+                      )
+                    );
+                    setEditingCatId(null);
+                  } catch (err: unknown) {
+                    alert(`수정 실패: ${err instanceof Error ? err.message : String(err)}`);
+                  } finally {
+                    setSavingEditCat(false);
+                  }
+                }}
+              >
+                <input
+                  type="text"
+                  value={editCatEmoji}
+                  onChange={(e) => setEditCatEmoji(e.target.value)}
+                  className="w-12 rounded-xl border border-black/10 bg-black/5 px-2 py-2 text-center text-sm dark:border-white/10 dark:bg-white/5"
+                  maxLength={4}
+                />
+                <input
+                  type="text"
+                  value={editCatName}
+                  onChange={(e) => setEditCatName(e.target.value)}
+                  autoFocus
+                  className="w-32 rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm dark:border-white/10 dark:bg-white/5"
+                  maxLength={20}
+                />
+                <button
+                  type="submit"
+                  disabled={savingEditCat || !editCatName.trim()}
+                  className="rounded-xl border border-black/10 bg-black/8 px-3 py-2 text-sm disabled:opacity-40 dark:border-white/10 dark:bg-white/8"
+                >
+                  {savingEditCat ? "…" : "저장"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingCatId(null)}
+                  className="text-sm text-zinc-400 hover:text-zinc-600 dark:text-white/30 dark:hover:text-white/60"
+                >
+                  취소
+                </button>
+              </form>
+            );
+          }
+
+          // 일반 탭 (드래그 가능)
           return (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => onCharChange?.(c.id)}
+            <div
+              key={cat.id}
+              draggable
+              onDragStart={() => { dragCatIdRef.current = cat.id; }}
+              onDragOver={(e) => { e.preventDefault(); setDragOverCatId(cat.id); }}
+              onDragLeave={() => setDragOverCatId(null)}
+              onDrop={async () => {
+                setDragOverCatId(null);
+                const fromId = dragCatIdRef.current;
+                dragCatIdRef.current = null;
+                if (!fromId || fromId === cat.id || !userId) return;
+
+                const fromIdx = categories.findIndex((c) => c.id === fromId);
+                const toIdx = categories.findIndex((c) => c.id === cat.id);
+                if (fromIdx === -1 || toIdx === -1) return;
+
+                const next = [...categories];
+                const [moved] = next.splice(fromIdx, 1);
+                next.splice(toIdx, 0, moved);
+                setCategories(next);
+
+                try {
+                  await reorderCategories(userId, next.map((c) => c.id));
+                } catch (err: unknown) {
+                  alert(`순서 저장 실패: ${err instanceof Error ? err.message : String(err)}`);
+                }
+              }}
+              onDragEnd={() => { dragCatIdRef.current = null; setDragOverCatId(null); }}
               className={[
-                "inline-flex items-center gap-2 rounded-2xl border px-5 py-2.5 text-sm font-medium transition",
+                "group relative inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-medium transition cursor-grab active:cursor-grabbing select-none",
                 active
                   ? "border-black/20 bg-black/10 text-zinc-900 dark:border-white/20 dark:bg-white/12 dark:text-white shadow-[0_8px_24px_rgba(0,0,0,0.10)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
                   : "border-black/10 bg-black/[0.03] text-zinc-500 hover:bg-black/[0.06] hover:text-zinc-800 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/40 dark:hover:bg-white/[0.07] dark:hover:text-white/70",
+                isDragOver ? "scale-105 border-black/30 dark:border-white/30" : "",
               ].join(" ")}
             >
-              <span className="text-base">{c.emoji}</span>
-              <span>{c.name}</span>
-              {active && (
-                <span className="ml-0.5 rounded-full bg-black/10 px-1.5 py-0.5 text-xs dark:bg-white/10">
-                  수집중
-                </span>
+              {/* 드래그 핸들 */}
+              <span className="text-zinc-300 dark:text-white/20 opacity-0 group-hover:opacity-100 transition text-xs leading-none">
+                ⠿
+              </span>
+
+              {/* 탭 클릭 영역 */}
+              <button
+                type="button"
+                onClick={() => { setActiveCategoryId(cat.id); setOpen(null); }}
+                className="inline-flex items-center gap-1.5"
+              >
+                <span className="text-base">{cat.emoji}</span>
+                <span>{cat.name}</span>
+                {active && (
+                  <span className="ml-0.5 rounded-full bg-black/10 px-1.5 py-0.5 text-xs dark:bg-white/10">
+                    보는중
+                  </span>
+                )}
+              </button>
+
+              {/* 편집 버튼 (hover 시 표시) */}
+              {userId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingCatId(cat.id);
+                    setEditCatName(cat.name);
+                    setEditCatEmoji(cat.emoji);
+                  }}
+                  className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition text-xs leading-none"
+                  title="편집"
+                >
+                  ✏️
+                </button>
               )}
-            </button>
+            </div>
           );
         })}
+
+        {/* 카테고리 추가 버튼 */}
+        {userId && !showAddCat && (
+          <button
+            type="button"
+            onClick={() => setShowAddCat(true)}
+            className="inline-flex items-center gap-1.5 rounded-2xl border border-dashed border-black/15 px-4 py-2.5 text-sm text-zinc-400 transition hover:border-black/25 hover:text-zinc-600 dark:border-white/15 dark:text-white/30 dark:hover:border-white/30 dark:hover:text-white/55"
+          >
+            <span>＋</span>
+            <span>카테고리 추가</span>
+          </button>
+        )}
+
+        {/* 카테고리 추가 인라인 폼 */}
+        {userId && showAddCat && (
+          <form
+            className="inline-flex items-center gap-2"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!newCatName.trim() || savingCat) return;
+              setSavingCat(true);
+              try {
+                const cat = await insertCategory(userId, newCatName, newCatEmoji || "📦");
+                setCategories((prev) => [...prev, cat]);
+                setActiveCategoryId(cat.id);
+                setNewCatName("");
+                setNewCatEmoji("");
+                setShowAddCat(false);
+              } catch (err: unknown) {
+                alert(`카테고리 추가 실패: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setSavingCat(false);
+              }
+            }}
+          >
+            <input
+              type="text"
+              placeholder="🐿️"
+              value={newCatEmoji}
+              onChange={(e) => setNewCatEmoji(e.target.value)}
+              className="w-12 rounded-xl border border-black/10 bg-black/5 px-2 py-2 text-center text-sm dark:border-white/10 dark:bg-white/5"
+              maxLength={4}
+            />
+            <input
+              type="text"
+              placeholder="카테고리 이름"
+              value={newCatName}
+              onChange={(e) => setNewCatName(e.target.value)}
+              autoFocus
+              className="w-32 rounded-xl border border-black/10 bg-black/5 px-3 py-2 text-sm dark:border-white/10 dark:bg-white/5"
+              maxLength={20}
+            />
+            <button
+              type="submit"
+              disabled={savingCat || !newCatName.trim()}
+              className="rounded-xl border border-black/10 bg-black/8 px-3 py-2 text-sm disabled:opacity-40 dark:border-white/10 dark:bg-white/8"
+            >
+              {savingCat ? "…" : "추가"}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowAddCat(false); setNewCatName(""); setNewCatEmoji(""); }}
+              className="text-sm text-zinc-400 hover:text-zinc-600 dark:text-white/30 dark:hover:text-white/60"
+            >
+              취소
+            </button>
+          </form>
+        )}
       </div>
 
-      <div className="flex items-end justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold">
-            {CHARACTERS.find((c) => c.id === character)?.emoji}{" "}
-            {CHARACTERS.find((c) => c.id === character)?.name} 수집
+          <h2 className="text-2xl font-semibold text-zinc-900 dark:text-white">
+            {categories.find((c) => c.id === activeCategoryId)?.emoji}{" "}
+            {categories.find((c) => c.id === activeCategoryId)?.name ?? "수집"} 수집
           </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-sm text-zinc-500 dark:text-white/50">
             수집중 → 수집완료로 옮기며 내 굿즈 아카이브를 만든다
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setView("collecting")}
-            className={`rounded-full border px-4 py-2 text-sm ${
+            className={`rounded-full border px-4 py-2 text-sm transition ${
               view === "collecting"
-                ? "border-foreground/20 bg-foreground/10 text-foreground"
-                : "border-foreground/10 bg-foreground/5 text-muted-foreground hover:bg-foreground/10"
+                ? "border-black/20 bg-black/10 text-zinc-900 dark:border-white/20 dark:bg-white/12 dark:text-white"
+                : "border-black/10 bg-black/[0.04] text-zinc-500 hover:bg-black/[0.08] hover:text-zinc-800 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/50 dark:hover:bg-white/[0.08]"
             }`}
           >
             수집중
@@ -882,10 +1125,10 @@ export default function Collection({
           <button
             type="button"
             onClick={() => setView("collected")}
-            className={`rounded-full border px-4 py-2 text-sm ${
+            className={`rounded-full border px-4 py-2 text-sm transition ${
               view === "collected"
-                ? "border-foreground/20 bg-foreground/10 text-foreground"
-                : "border-foreground/10 bg-foreground/5 text-muted-foreground hover:bg-foreground/10"
+                ? "border-black/20 bg-black/10 text-zinc-900 dark:border-white/20 dark:bg-white/12 dark:text-white"
+                : "border-black/10 bg-black/[0.04] text-zinc-500 hover:bg-black/[0.08] hover:text-zinc-800 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/50 dark:hover:bg-white/[0.08]"
             }`}
           >
             수집완료
@@ -900,7 +1143,7 @@ export default function Collection({
               }
               setAddOpen(true);
             }}
-            className="ml-2 rounded-full border border-foreground/10 bg-foreground/5 px-4 py-2 text-sm text-foreground/80 hover:bg-foreground/10"
+            className="ml-1 rounded-full border border-black/10 bg-black/[0.04] px-4 py-2 text-sm text-zinc-700 transition hover:bg-black/[0.08] dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70 dark:hover:bg-white/[0.08]"
           >
             + 수집중 추가
           </button>
@@ -914,29 +1157,67 @@ export default function Collection({
               }
               setQuickOpen(true);
             }}
-            className="rounded-full border border-foreground/10 bg-foreground/10 px-4 py-2 text-sm text-foreground hover:bg-foreground/15"
+            className="rounded-full border border-black/15 bg-black/[0.07] px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-black/[0.12] dark:border-white/15 dark:bg-white/[0.08] dark:text-white/85 dark:hover:bg-white/[0.13]"
           >
             ⚡ 수집완료 빠른추가
           </button>
+
+          {/* 콜라쥬 모드 토글 */}
+          <button
+            type="button"
+            onClick={() => {
+              setCollageMode((v) => {
+                if (v) setCollageSelected(new Set());
+                return !v;
+              });
+            }}
+            className={[
+              "rounded-full border px-4 py-2 text-sm font-medium transition",
+              collageMode
+                ? "border-pink-400/60 bg-pink-400/15 text-pink-600 dark:text-pink-300"
+                : "border-black/10 bg-black/[0.04] text-zinc-700 hover:bg-black/[0.08] dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70 dark:hover:bg-white/[0.08]",
+            ].join(" ")}
+          >
+            🖼️ 콜라쥬{collageMode ? ` (${collageSelected.size}개 선택)` : ""}
+          </button>
+
+          {collageMode && collageSelected.size >= 2 && (
+            <button
+              type="button"
+              onClick={() => setCollageOpen(true)}
+              className="rounded-full border border-pink-400/60 bg-pink-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-pink-600"
+            >
+              만들기 →
+            </button>
+          )}
         </div>
       </div>
 
+      {/* ── 내 공개 수집 요약 ────────────────────────── */}
+      {!needLogin && !loading && userId && (
+        <MiniStatsSummary
+          collecting={collecting}
+          collected={collected}
+          userHandle={userHandle}
+        />
+      )}
+
       {needLogin && (
-        <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5 text-white/80">
-          <div className="text-sm">로그인하면 내 수집 데이터를 불러오고 저장할 수 있어.</div>
-          <div className="mt-2 text-xs text-white/60">로그인 후 다시 이 탭을 열면 자동으로 불러와져.</div>
+        <div className="mt-6 rounded-2xl border border-black/10 bg-black/[0.04] p-5 dark:border-white/10 dark:bg-white/[0.05]">
+          <div className="text-sm text-zinc-700 dark:text-white/80">로그인하면 내 수집 데이터를 불러오고 저장할 수 있어.</div>
+          <div className="mt-2 text-xs text-zinc-500 dark:text-white/50">로그인 후 다시 이 탭을 열면 자동으로 불러와져.</div>
 
           <div className="mt-4 flex gap-2">
             <a
               href="/login"
-              className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-white hover:bg-white/15"
+              className="rounded-full border border-black/15 bg-black/[0.07] px-4 py-2 text-sm text-zinc-900 transition hover:bg-black/[0.12] dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
             >
               로그인하러 가기
             </a>
             <button
               type="button"
               onClick={() => load()}
-              className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10"
+              className="rounded-full border border-black/10 bg-black/[0.04] px-4 py-2 text-sm text-zinc-700 transition hover:bg-black/[0.08] dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10"
             >
               다시 시도
             </button>
@@ -945,10 +1226,10 @@ export default function Collection({
       )}
 
       {loading && (
-        <div className="mt-6 text-sm text-white/60">
+        <div className="mt-6 text-sm text-zinc-500 dark:text-white/60">
           불러오는 중…
           {loadErr ? (
-            <div className="mt-2 text-xs text-red-400">
+            <div className="mt-2 text-xs text-red-600 dark:text-red-400">
               {loadErr}{" "}
               <button className="underline" onClick={() => load()}>
                 다시 시도
@@ -961,7 +1242,7 @@ export default function Collection({
       {!loading && !needLogin && (
         <>
           {loadErr && (
-            <div className="mt-6 rounded-2xl border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-100">
+            <div className="mt-6 rounded-2xl border border-red-400/30 bg-red-500/[0.08] p-4 text-sm text-red-700 dark:border-red-400/20 dark:bg-red-500/10 dark:text-red-100">
               {loadErr}{" "}
               <button className="underline" onClick={() => load()}>
                 다시 시도
@@ -971,19 +1252,19 @@ export default function Collection({
 
           {/* ✅ (B) 수집완료 탭: 검색/필터/정렬 UI */}
           {view === "collected" && (
-            <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="mt-6 rounded-2xl border border-black/10 bg-black/[0.03] p-4 dark:border-white/10 dark:bg-white/[0.04]">
               <div className="flex flex-wrap items-center gap-2">
                 <input
                   value={qCollected}
                   onChange={(e) => setQCollected(e.target.value)}
                   placeholder="검색: 제목/메모"
-                  className="w-64 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 outline-none placeholder:text-white/30"
+                  className="w-64 rounded-full border border-black/10 bg-white/60 px-4 py-2 text-sm text-zinc-800 outline-none placeholder:text-zinc-400 dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:placeholder:text-white/30"
                 />
 
                 <select
                   value={fMyPhoto}
                   onChange={(e) => setFMyPhoto(e.target.value as any)}
-                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 outline-none"
+                  className="rounded-full border border-black/10 bg-white/60 px-4 py-2 text-sm text-zinc-700 outline-none dark:border-white/10 dark:bg-white/5 dark:text-white/80"
                 >
                   <option value="all">내사진: 전체</option>
                   <option value="with">내사진: 있음</option>
@@ -993,7 +1274,7 @@ export default function Collection({
                 <select
                   value={fMemo}
                   onChange={(e) => setFMemo(e.target.value as any)}
-                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 outline-none"
+                  className="rounded-full border border-black/10 bg-white/60 px-4 py-2 text-sm text-zinc-700 outline-none dark:border-white/10 dark:bg-white/5 dark:text-white/80"
                 >
                   <option value="all">메모: 전체</option>
                   <option value="with">메모: 있음</option>
@@ -1003,7 +1284,7 @@ export default function Collection({
                 <select
                   value={fLink}
                   onChange={(e) => setFLink(e.target.value as any)}
-                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 outline-none"
+                  className="rounded-full border border-black/10 bg-white/60 px-4 py-2 text-sm text-zinc-700 outline-none dark:border-white/10 dark:bg-white/5 dark:text-white/80"
                 >
                   <option value="all">링크: 전체</option>
                   <option value="with">링크: 있음</option>
@@ -1013,7 +1294,7 @@ export default function Collection({
                 <select
                   value={sortCollected}
                   onChange={(e) => setSortCollected(e.target.value as any)}
-                  className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/80 outline-none"
+                  className="rounded-full border border-black/10 bg-white/60 px-4 py-2 text-sm text-zinc-700 outline-none dark:border-white/10 dark:bg-white/5 dark:text-white/80"
                 >
                   <option value="newest">정렬: 최신(기본)</option>
                   <option value="oldest">정렬: 오래된</option>
@@ -1034,20 +1315,41 @@ export default function Collection({
                     setFLink("all");
                     setSortCollected("newest");
                   }}
-                  className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-white hover:bg-white/15"
+                  className="rounded-full border border-black/10 bg-black/[0.06] px-4 py-2 text-sm text-zinc-800 transition hover:bg-black/[0.10] dark:border-white/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
                 >
                   초기화
                 </button>
 
-                <div className="ml-auto text-xs text-white/50">{displayList.length}개 표시됨</div>
+                <div className="ml-auto text-xs text-zinc-400 dark:text-white/50">{displayList.length}개 표시됨</div>
               </div>
             </div>
           )}
 
           <div className="mt-6 grid gap-6 md:grid-cols-3">
-            {displayList.map((item) => (
-              <button key={item.id} type="button" onClick={() => openDetail(item)} className="text-left">
-                <GlassCard className="group overflow-hidden p-0">
+            {displayList.map((item) => {
+              const isColSelected = collageSelected.has(item.id);
+              return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  if (collageMode) {
+                    setCollageSelected((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(item.id)) next.delete(item.id);
+                      else next.add(item.id);
+                      return next;
+                    });
+                  } else {
+                    openDetail(item);
+                  }
+                }}
+                className="text-left"
+              >
+                <GlassCard className={[
+                  "group overflow-hidden p-0 transition-all",
+                  collageMode && isColSelected ? "ring-2 ring-pink-400 ring-offset-2 ring-offset-transparent" : "",
+                ].join(" ")}>
                   <div className="relative h-[220px] w-full overflow-hidden rounded-2xl">
                     {item.status === "collected" ? (
                       <div className="grid h-full w-full grid-cols-2">
@@ -1085,8 +1387,33 @@ export default function Collection({
 
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/65 via-black/15 to-black/0" />
 
+                    {/* 콜라쥬 모드 체크 표시 */}
+                    {collageMode && (
+                      <div className={[
+                        "absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full border-2 text-sm font-bold transition-all",
+                        isColSelected
+                          ? "border-pink-400 bg-pink-400 text-white"
+                          : "border-white/50 bg-black/30 text-white/50",
+                      ].join(" ")}>
+                        {isColSelected ? "✓" : ""}
+                      </div>
+                    )}
+
+                    {/* source_type 뱃지 */}
+                    {item.sourceType && (
+                      <div className={[
+                        "pointer-events-none absolute left-3 top-3 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold backdrop-blur",
+                        item.sourceType === "official"
+                          ? "bg-sky-500/80 text-white"
+                          : "bg-zinc-700/80 text-white/80",
+                      ].join(" ")}>
+                        {item.sourceType === "official" ? "✅ 공식" : "❓ 출처불명"}
+                      </div>
+                    )}
+
                     {item.status === "collected" && (
-                      <div className="pointer-events-none absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/30 px-3 py-1 text-[11px] text-white/80 backdrop-blur">
+                      <div className="pointer-events-none absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/30 px-3 py-1 text-[11px] text-white/80 backdrop-blur"
+                        style={{ top: item.sourceType ? "2.2rem" : undefined }}>
                         <span>상품</span>
                         <span className="text-white/40">|</span>
                         <span>내사진</span>
@@ -1110,7 +1437,8 @@ export default function Collection({
                   <div className="pointer-events-none h-10 w-full bg-white/[0.02] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
                 </GlassCard>
               </button>
-            ))}
+              );
+            })}
           </div>
         </>
       )}
@@ -1144,12 +1472,19 @@ export default function Collection({
                   )}
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/0" />
                   <div className="absolute bottom-0 left-0 right-0 p-6">
-                    <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/80 backdrop-blur">
-                      {open.status === "collecting" ? "수집중" : "수집완료"}
-                      <span className="text-white/40">•</span>
-                      <span className="text-white/70">
-                        원가 {formatPrice(open.originalPrice)} / 중고 {formatPrice(open.usedPrice)}
-                      </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/80 backdrop-blur">
+                        {open.status === "collecting" ? "수집중" : "수집완료"}
+                        <span className="text-white/40">•</span>
+                        <span className="text-white/70">
+                          원가 {formatPrice(open.originalPrice)} / 중고 {formatPrice(open.usedPrice)}
+                        </span>
+                      </div>
+                      {open.status === "collected" && open.salePrice && (
+                        <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/15 px-3 py-1 text-xs text-emerald-200 backdrop-blur">
+                          💰 판매가 {formatPrice(open.salePrice)}
+                        </div>
+                      )}
                     </div>
                     <div className="mt-3 text-3xl font-semibold">{open.title}</div>
 
@@ -1190,6 +1525,38 @@ export default function Collection({
               </div>
 
               <div className="px-6 py-5">
+                {/* 수집완료 - 판매가 빠른 설정 */}
+                {open.status === "collected" && !editMode && (
+                  <div className="mb-4 flex items-center gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3">
+                    <span className="text-sm text-emerald-200">💰 판매 희망가</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={editSalePrice}
+                      onChange={(e) => {
+                        const v = e.target.value.replace(/[^0-9]/g, "");
+                        setEditSalePrice(v);
+                      }}
+                      placeholder="판매할 생각 없으면 비워둬"
+                      className="flex-1 rounded-xl border border-emerald-400/20 bg-white/5 px-3 py-1.5 text-sm text-white/80 outline-none placeholder-white/30"
+                    />
+                    <button
+                      type="button"
+                      disabled={savingEdit}
+                      onClick={async () => {
+                        if (!userId || !open) return;
+                        setSavingEdit(true);
+                        await updateCollectItem(userId, open.id, { salePrice: parsePrice(editSalePrice) });
+                        setOpen((prev) => prev ? { ...prev, salePrice: parsePrice(editSalePrice) } : prev);
+                        setSavingEdit(false);
+                      }}
+                      className="rounded-full border border-emerald-400/30 bg-emerald-500/15 px-3 py-1.5 text-xs text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50"
+                    >
+                      저장
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between">
                   <div className="text-lg font-semibold">
                     {open.status === "collecting" ? "수집중 상세" : "내 수집품"}
@@ -1272,6 +1639,21 @@ export default function Collection({
                       </div>
                     </div>
 
+                    {/* 판매 희망가 — 수집완료 시에만 */}
+                    {open?.status === "collected" && (
+                      <div>
+                        <div className="text-sm text-white/70">
+                          판매 희망가 <span className="text-white/40 text-xs">(선택 · 공개됨)</span>
+                        </div>
+                        <input
+                          value={editSalePrice}
+                          onChange={(e) => setEditSalePrice(e.target.value)}
+                          placeholder="예: 20000 (판매할 생각 없으면 비워둬)"
+                          className="mt-2 w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 outline-none"
+                        />
+                      </div>
+                    )}
+
                     <div className="mt-2">
                       <div className="text-sm text-white/70">대표(상품) 이미지</div>
 
@@ -1335,6 +1717,32 @@ export default function Collection({
                           </label>
                         </div>
                       )}
+                    </div>
+
+                    {/* ===== 출처 태그 ===== */}
+                    <div>
+                      <div className="text-sm text-white/70">출처 태그 <span className="text-white/40 text-xs">(선택)</span></div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {(["official", "unknown", null] as const).map((v) => (
+                          <button
+                            key={String(v)}
+                            type="button"
+                            onClick={() => setEditSourceType(v)}
+                            className={[
+                              "rounded-full border px-4 py-2 text-sm transition",
+                              editSourceType === v
+                                ? v === "official"
+                                  ? "border-sky-400/60 bg-sky-500/20 text-sky-300"
+                                  : v === "unknown"
+                                  ? "border-zinc-400/60 bg-zinc-500/20 text-zinc-300"
+                                  : "border-white/20 bg-white/10 text-white"
+                                : "border-white/10 bg-white/5 text-white/60 hover:bg-white/10",
+                            ].join(" ")}
+                          >
+                            {v === "official" ? "✅ 공식" : v === "unknown" ? "❓ 출처불명" : "태그 없음"}
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
                     {/* ===== ✅ 수집완료 전용: 내 사진/메모 수정 ===== */}
@@ -1662,6 +2070,32 @@ export default function Collection({
                   )}
                 </div>
 
+                {/* 출처 태그 */}
+                <div>
+                  <div className="text-sm text-white/70">출처 태그 <span className="text-white/40 text-xs">(선택)</span></div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {(["official", "unknown", null] as const).map((v) => (
+                      <button
+                        key={String(v)}
+                        type="button"
+                        onClick={() => setAddSourceType(v)}
+                        className={[
+                          "rounded-full border px-4 py-2 text-sm transition",
+                          addSourceType === v
+                            ? v === "official"
+                              ? "border-sky-400/60 bg-sky-500/20 text-sky-300"
+                              : v === "unknown"
+                              ? "border-zinc-400/60 bg-zinc-500/20 text-zinc-300"
+                              : "border-white/20 bg-white/10 text-white"
+                            : "border-white/10 bg-white/5 text-white/60 hover:bg-white/10",
+                        ].join(" ")}
+                      >
+                        {v === "official" ? "✅ 공식" : v === "unknown" ? "❓ 출처불명" : "태그 없음"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="mt-4 flex items-center justify-between">
                   <div className="text-sm text-white/55">ESC로 닫기</div>
                   <button
@@ -1891,6 +2325,64 @@ export default function Collection({
           </div>
         </div>
       )}
+
+      {/* ── 콜라쥬 모달 ── */}
+      {collageOpen && (
+        <CollageModal
+          items={[...collecting, ...collected].filter((i) => collageSelected.has(i.id))}
+          onClose={() => setCollageOpen(false)}
+        />
+      )}
     </section>
+  );
+}
+
+// ── 내 공개 수집 요약 카드 ──────────────────────────────────────────
+function MiniStatsSummary({
+  collecting,
+  collected,
+  userHandle,
+}: {
+  collecting: CollectItem[];
+  collected: CollectItem[];
+  userHandle: string | null;
+}) {
+  const fmt = (n: number) => `${n.toLocaleString()}원`;
+
+  const sum = (items: CollectItem[]) =>
+    items.reduce((acc, i) => {
+      const v = i.salePrice ?? i.usedPrice ?? i.originalPrice ?? 0;
+      return acc + v;
+    }, 0);
+
+  const collectedTotal = sum(collected);
+  const collectingTotal = sum(collecting);
+  const total = collectedTotal + collectingTotal;
+
+  return (
+    <div className="mt-5 mb-1">
+      <GlassCard className="px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-xs text-zinc-500 dark:text-white/45">내 수집 요약</span>
+            <span className="text-sm font-semibold text-zinc-900 dark:text-white">{fmt(total)}</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-black/[0.04] px-3 py-1 text-xs text-zinc-600 dark:border-white/10 dark:bg-white/[0.05] dark:text-white/60">
+              수집완료 {fmt(collectedTotal)}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-black/10 bg-black/[0.04] px-3 py-1 text-xs text-zinc-600 dark:border-white/10 dark:bg-white/[0.05] dark:text-white/60">
+              수집중 {fmt(collectingTotal)}
+            </span>
+          </div>
+          {userHandle && (
+            <a
+              href={`/u/${encodeURIComponent(userHandle)}`}
+              className="flex-shrink-0 rounded-full border border-black/10 bg-black/[0.04] px-3.5 py-1.5 text-xs text-zinc-600 transition hover:bg-black/[0.08] dark:border-white/10 dark:bg-white/[0.05] dark:text-white/55 dark:hover:bg-white/[0.09]"
+            >
+              공개 페이지 보기 →
+            </a>
+          )}
+        </div>
+      </GlassCard>
+    </div>
   );
 }

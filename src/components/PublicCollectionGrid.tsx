@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import GlassCard from "@/components/layout/GlassCard";
 import type { CollectionRow } from "@/app/u/[handle]/page";
+import OfferModal from "@/components/OfferModal";
+import type { BrowseItem } from "@/app/browse/page";
 
 function formatPrice(n: number | null | undefined) {
   if (n == null) return "—";
@@ -23,8 +25,34 @@ function stopMouseDown(e: React.MouseEvent) {
   e.stopPropagation();
 }
 
-export default function PublicCollectionGrid({ items }: { items: CollectionRow[] }) {
+function toOfferItem(item: CollectionRow, ownerHandle: string): BrowseItem {
+  return {
+    id: item.id,
+    title: item.title,
+    image: item.image,
+    my_image: item.my_image,
+    original_price: item.original_price,
+    used_price: item.used_price,
+    sale_price: item.sale_price,
+    status: item.status,
+    created_at: item.created_at,
+    owner_id: item.owner_id,
+    owner_handle: ownerHandle,
+    owner_display_name: null,
+    cat_name: null,
+    cat_emoji: null,
+  };
+}
+
+export default function PublicCollectionGrid({
+  items,
+  ownerHandle,
+}: {
+  items: CollectionRow[];
+  ownerHandle: string;
+}) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [offerTarget, setOfferTarget] = useState<BrowseItem | null>(null);
   const selected = useMemo(() => items.find((x) => x.id === openId) ?? null, [items, openId]);
 
   // ESC 닫기 + body scroll lock
@@ -79,12 +107,14 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
           const img = getMainImage(item);
 
           return (
-            <button
+            <div
               key={item.id}
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={() => setOpenId(item.id)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setOpenId(item.id); }}
               className={[
-                "group text-left",
+                "group text-left cursor-pointer",
                 "transition-transform duration-200 ease-out",
                 "hover:-translate-y-[2px] active:translate-y-0",
                 focusRing,
@@ -182,9 +212,40 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
                   </div>
 
                   <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-white/0 transition group-hover:ring-white/10" />
+
+                  {/* source_type 뱃지 — 카드 좌상단 */}
+                  {item.source_type && (
+                    <div className={[
+                      "pointer-events-none absolute left-2 top-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold backdrop-blur",
+                      item.source_type === "official"
+                        ? "bg-sky-500/80 text-white"
+                        : "bg-zinc-700/80 text-white/80",
+                    ].join(" ")}>
+                      {item.source_type === "official" ? "✅ 공식" : "❓ 출처불명"}
+                    </div>
+                  )}
+
+                  {/* 💬 제안 버튼 — 카드 우상단, hover시 표시 */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOfferTarget(toOfferItem(item, ownerHandle));
+                    }}
+                    className="
+                      absolute right-2 top-2
+                      rounded-full border border-white/20 bg-black/50 px-2.5 py-1
+                      text-[11px] font-medium text-white/90
+                      backdrop-blur-sm transition
+                      opacity-0 group-hover:opacity-100
+                      hover:bg-black/70
+                    "
+                  >
+                    💬 제안
+                  </button>
                 </div>
               </GlassCard>
-            </button>
+            </div>
           );
         })}
       </div>
@@ -209,7 +270,7 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
               {/* header */}
               <div className="flex items-center justify-between border-b border-black/10 px-5 py-4 dark:border-white/10">
                 <div>
-                  <div className="inline-flex">
+                  <div className="inline-flex flex-wrap items-center gap-2">
                     <span className={badge}>
                       <span
                         aria-hidden
@@ -239,6 +300,18 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
                         {selected.status === "collecting" ? "수집중" : "수집완료"}
                       </span>
                     </span>
+
+                    {/* source_type 뱃지 */}
+                    {selected.source_type && (
+                      <span className={[
+                        "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold",
+                        selected.source_type === "official"
+                          ? "bg-sky-500/15 text-sky-600 dark:bg-sky-500/20 dark:text-sky-300"
+                          : "bg-zinc-200 text-zinc-600 dark:bg-zinc-700/50 dark:text-zinc-300",
+                      ].join(" ")}>
+                        {selected.source_type === "official" ? "✅ 공식" : "❓ 출처불명"}
+                      </span>
+                    )}
                   </div>
 
                   <div className={`mt-0.5 text-lg font-semibold ${textTitle}`}>
@@ -298,8 +371,21 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
                   </div>
                 ) : null}
 
-                {selected.link ? (
-                  <div className="mt-4 flex justify-end">
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  {/* 💬 가격 제안 */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenId(null);
+                      setOfferTarget(toOfferItem(selected, ownerHandle));
+                    }}
+                    className={pill}
+                  >
+                    💬 가격 제안하기
+                  </button>
+
+                  {selected.link ? (
                     <a
                       href={selected.link}
                       target="_blank"
@@ -309,12 +395,17 @@ export default function PublicCollectionGrid({ items }: { items: CollectionRow[]
                     >
                       🔗 구매/정보 링크 열기
                     </a>
-                  </div>
-                ) : null}
+                  ) : null}
+                </div>
               </div>
             </GlassCard>
           </div>
         </div>
+      )}
+
+      {/* 가격 제안 모달 */}
+      {offerTarget && (
+        <OfferModal item={offerTarget} onClose={() => setOfferTarget(null)} />
       )}
     </>
   );
