@@ -1562,7 +1562,7 @@ export default function Collection() {
                     {open.status === "collecting" ? "수집중 상세" : "내 수집품"}
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
                       onClick={removeItem}
@@ -1571,6 +1571,17 @@ export default function Collection() {
                     >
                       {deleting ? "삭제 중…" : "삭제"}
                     </button>
+
+                    {editMode && (
+                      <button
+                        type="button"
+                        onClick={saveEdit}
+                        disabled={savingEdit}
+                        className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-white hover:bg-white/15 disabled:opacity-60"
+                      >
+                        {savingEdit ? "저장 중…" : "수정 저장"}
+                      </button>
+                    )}
 
                     <button
                       type="button"

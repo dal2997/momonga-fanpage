@@ -196,8 +196,8 @@ export default function TopTabs({
           </span>
         </div>
 
-        {/* CENTER: 탭 */}
-        <nav className="absolute left-1/2 -translate-x-1/2">
+        {/* CENTER: 탭 — 데스크탑만 */}
+        <nav className="absolute left-1/2 -translate-x-1/2 hidden sm:block">
           <div
             className="
               relative inline-flex items-center gap-1 rounded-full border p-1 backdrop-blur
@@ -207,7 +207,6 @@ export default function TopTabs({
               dark:shadow-[0_22px_80px_rgba(0,0,0,0.45)]
             "
           >
-            {/* ✅ glass highlight 한 겹 */}
             <div
               aria-hidden
               className="
@@ -218,7 +217,6 @@ export default function TopTabs({
                 dark:opacity-70
               "
             />
-            {/* ✅ rim */}
             <div
               aria-hidden
               className="
@@ -229,7 +227,6 @@ export default function TopTabs({
 
             {TABS.map((t) => {
               const active = !isBrowse && value === t.key;
-
               return (
                 <button
                   key={t.key}
@@ -239,15 +236,8 @@ export default function TopTabs({
                     "relative rounded-full px-4 py-2 text-sm transition",
                     "focus:outline-none focus-visible:ring-2 focus-visible:ring-black/15 dark:focus-visible:ring-white/20",
                     active
-                      ? [
-                          "bg-black/[0.08] text-zinc-900",
-                          "dark:bg-white/[0.12] dark:text-white",
-                          "shadow-[0_10px_30px_rgba(0,0,0,0.10)] dark:shadow-[0_14px_40px_rgba(0,0,0,0.45)]",
-                        ].join(" ")
-                      : [
-                          "text-zinc-700 hover:bg-black/[0.06] hover:text-zinc-900",
-                          "dark:text-white/65 dark:hover:bg-white/[0.10] dark:hover:text-white/85",
-                        ].join(" "),
+                      ? "bg-black/[0.08] text-zinc-900 dark:bg-white/[0.12] dark:text-white shadow-[0_10px_30px_rgba(0,0,0,0.10)] dark:shadow-[0_14px_40px_rgba(0,0,0,0.45)]"
+                      : "text-zinc-700 hover:bg-black/[0.06] hover:text-zinc-900 dark:text-white/65 dark:hover:bg-white/[0.10] dark:hover:text-white/85",
                   ].join(" ")}
                 >
                   {t.label}
@@ -255,7 +245,6 @@ export default function TopTabs({
               );
             })}
 
-            {/* 탐색 — 별도 페이지 링크 */}
             <Link
               href="/browse"
               className={[
@@ -278,5 +267,50 @@ export default function TopTabs({
         </div>
       </div>
     </header>
+
+    {/* ── 모바일 하단 탭바 ── */}
+    <nav className="fixed bottom-0 inset-x-0 z-50 sm:hidden">
+      {/* 배경 레이어 */}
+      <div className="
+        pointer-events-none absolute inset-0 border-t
+        border-pink-200/30 bg-white/75 backdrop-blur-2xl backdrop-saturate-200
+        dark:border-white/[0.08] dark:bg-black/60
+      " />
+      <div className="relative flex items-center justify-around h-14 px-1">
+        {TABS.map((t) => {
+          const icon: Record<string, string> = { home: "🏠", gallery: "📷", collection: "📦", profile: "👤" };
+          const active = !isBrowse && value === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => handleTabClick(t.key)}
+              className={[
+                "flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition text-[10px]",
+                active
+                  ? "text-pink-600 dark:text-pink-400"
+                  : "text-zinc-500 dark:text-white/50",
+              ].join(" ")}
+            >
+              <span className="text-lg leading-none">{icon[t.key]}</span>
+              {t.label}
+            </button>
+          );
+        })}
+        <Link
+          href="/browse"
+          className={[
+            "flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition text-[10px]",
+            isBrowse
+              ? "text-pink-600 dark:text-pink-400"
+              : "text-zinc-500 dark:text-white/50",
+          ].join(" ")}
+        >
+          <span className="text-lg leading-none">🔍</span>
+          탐색
+        </Link>
+      </div>
+    </nav>
+  </>
   );
 }
