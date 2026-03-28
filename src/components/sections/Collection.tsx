@@ -1445,16 +1445,17 @@ export default function Collection() {
 
       {/* 상세 모달 */}
       {open && !needLogin && (
-        <div className="fixed inset-0 z-50 grid place-items-center px-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto">
           <button
             type="button"
-            className="absolute inset-0 bg-black/60"
+            className="fixed inset-0 bg-black/60"
             onClick={() => {
               setOpen(null);
               setEditMode(false);
             }}
           />
 
+          <div className="flex min-h-full items-center justify-center px-4 py-6">
           <div className="relative w-full max-w-5xl">
             <GlassCard className="overflow-hidden p-0">
               <div className="grid md:grid-cols-2">
@@ -1947,22 +1948,24 @@ export default function Collection() {
               </div>
             </GlassCard>
           </div>
+          </div>
         </div>
       )}
 
       {/* ===== 아래 addOpen / quickOpen 모달은 너가 붙인 그대로 (변경 없음) ===== */}
       {/* 수집중 추가 모달 */}
       {addOpen && !needLogin && (
-        <div className="fixed inset-0 z-50 grid place-items-center px-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto">
           <button
             type="button"
-            className="absolute inset-0 bg-black/60"
+            className="fixed inset-0 bg-black/60"
             onClick={() => {
               setAddOpen(false);
               resetAddForm();
             }}
           />
 
+          <div className="flex min-h-full items-center justify-center px-4 py-6">
           <div className="relative w-full max-w-3xl">
             <GlassCard className="p-6">
               <div className="flex items-start justify-between gap-4">
@@ -2121,21 +2124,23 @@ export default function Collection() {
               </div>
             </GlassCard>
           </div>
+          </div>
         </div>
       )}
 
       {/* ✅ 수집완료 빠른추가 모달 */}
       {quickOpen && !needLogin && (
-        <div className="fixed inset-0 z-50 grid place-items-center px-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto">
           <button
             type="button"
-            className="absolute inset-0 bg-black/60"
+            className="fixed inset-0 bg-black/60"
             onClick={() => {
               setQuickOpen(false);
               resetQuick();
             }}
           />
 
+          <div className="flex min-h-full items-center justify-center px-4 py-6">
           <div className="relative w-full max-w-6xl">
             <GlassCard className="p-6">
               <div className="flex items-start justify-between gap-4">
@@ -2333,6 +2338,7 @@ export default function Collection() {
                 <div className="text-right text-xs text-white/45">ESC로 닫기</div>
               </div>
             </GlassCard>
+          </div>
           </div>
         </div>
       )}
