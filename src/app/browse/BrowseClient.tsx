@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import type { BrowseItem, UserCard } from "./page";
 import OfferModal from "@/components/OfferModal";
+import TopTabs from "@/components/layout/TopTabs";
 import { supabase } from "@/lib/supabase/client";
 
 type SortKey = "popular" | "items";
@@ -13,6 +15,7 @@ export default function BrowseClient({ userCards }: { userCards: UserCard[] }) {
   const [sortKey, setSortKey] = useState<SortKey>("popular");
   const [offerTarget, setOfferTarget] = useState<BrowseItem | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -39,22 +42,20 @@ export default function BrowseClient({ userCards }: { userCards: UserCard[] }) {
 
   return (
     <>
+      <TopTabs
+        value="home"
+        onChange={(tab) => router.push(`/?tab=${tab}`)}
+        todayVisits={0}
+      />
+
       <main className="mx-auto max-w-5xl px-5 pt-24 pb-32">
 
         {/* 헤더 */}
-        <div className="mb-8 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">탐색</h1>
-            <p className="mt-1 text-sm text-zinc-500 dark:text-white/40">
-              다른 유저들의 수집 취향을 구경해봐
-            </p>
-          </div>
-          <Link
-            href="/"
-            className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm transition border-black/10 bg-black/[0.04] text-zinc-700 hover:bg-black/[0.08] dark:border-white/10 dark:bg-white/[0.05] dark:text-white/70 dark:hover:bg-white/[0.09]"
-          >
-            ← 홈
-          </Link>
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">탐색</h1>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-white/40">
+            다른 유저들의 수집 취향을 구경해봐
+          </p>
         </div>
 
         {/* 검색 + 정렬 */}
