@@ -105,8 +105,9 @@ export default function LoginPage() {
 
         {/* 로고 */}
         <div className="mb-8 text-center">
-          <div className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">
-            MOMONGA
+          <div className="flex justify-center mb-3">
+            <img src="/logo-momonga-light.svg" alt="모몽가" className="block h-14 w-auto dark:hidden" />
+            <img src="/logo-momonga-dark.svg"  alt="모몽가" className="hidden h-14 w-auto dark:block" />
           </div>
           <p className="mt-2 text-sm text-zinc-500 dark:text-white/45">
             이메일로 로그인 링크를 보내줄게
