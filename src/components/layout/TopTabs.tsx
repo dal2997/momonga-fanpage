@@ -176,14 +176,11 @@ export default function TopTabs({
           <button
             type="button"
             onClick={() => handleTabClick("home")}
-            className="
-              text-sm font-semibold tracking-wide transition
-              text-zinc-900 hover:text-zinc-950
-              dark:text-white/90 dark:hover:text-white
-            "
+            className="transition opacity-90 hover:opacity-100"
             aria-label="Go Home"
           >
-            MOMONGA
+            <img src="/logo-momonga-light.svg" alt="모몽가" className="block h-7 w-auto dark:hidden" />
+            <img src="/logo-momonga-dark.svg"  alt="모몽가" className="hidden h-7 w-auto dark:block" />
           </button>
 
           <span className={[
