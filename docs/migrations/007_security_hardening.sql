@@ -8,6 +8,7 @@
 -- 2) admin_get_user_email / admin_list_approved_emails 에 관리자 검증 강제
 -- 3) 가격 제안 알림용 offer_owner_email RPC 신설
 --    (일반 유저가 admin RPC로 남의 이메일을 조회하던 경로 제거)
+--    + offers INSERT 정책에서 owner_id 를 실제 수집품 소유자로 강제
 -- 4) increment_profile_view 에서 클라이언트가 넘긴 viewer_id 를 믿지 않도록 수정
 -- ============================================================
 
@@ -151,11 +152,16 @@ AS $$
 DECLARE
   v_email text;
 BEGIN
+  -- 이메일은 offers.owner_id 가 아니라 "실제 수집품 소유자(collections.owner_id)"에서 가져옴
+  -- (offers.owner_id 조작으로 남의 이메일을 빼가는 것 방지)
   SELECT u.email INTO v_email
   FROM public.offers o
-  JOIN auth.users u ON u.id = o.owner_id
+  JOIN public.collections c ON c.id = o.collection_id
+  JOIN auth.users u ON u.id = c.owner_id
   WHERE o.id = p_offer_id
     AND o.from_user_id = auth.uid()
+    AND o.owner_id = c.owner_id
+    AND c.owner_id <> auth.uid()
     AND o.created_at > now() - interval '5 minutes';
 
   RETURN v_email;  -- 조건 안 맞으면 NULL
@@ -164,6 +170,50 @@ $$;
 
 REVOKE ALL ON FUNCTION public.offer_owner_email(uuid) FROM public, anon;
 GRANT EXECUTE ON FUNCTION public.offer_owner_email(uuid) TO authenticated;
+
+
+-- ------------------------------------------------------------
+-- 3-1. offers INSERT 정책 강화
+--      owner_id 는 반드시 해당 수집품의 실제 소유자여야 하고, 본인 수집품엔 제안 불가
+-- ------------------------------------------------------------
+DROP POLICY IF EXISTS "offers: insert authenticated" ON public.offers;
+CREATE POLICY "offers: insert authenticated"
+  ON public.offers
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    from_user_id = auth.uid()
+    AND owner_id = (
+      SELECT c.owner_id FROM public.collections c WHERE c.id = collection_id
+    )
+    AND owner_id <> auth.uid()
+  );
+
+-- 제안 상태 변경 시 owner_id / collection_id / from_user_id / amount 바꿔치기 방지
+CREATE OR REPLACE FUNCTION public.protect_offer_columns()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+BEGIN
+  IF current_user NOT IN ('anon', 'authenticated') THEN
+    RETURN NEW;
+  END IF;
+  IF NEW.owner_id      IS DISTINCT FROM OLD.owner_id
+     OR NEW.collection_id IS DISTINCT FROM OLD.collection_id
+     OR NEW.from_user_id  IS DISTINCT FROM OLD.from_user_id
+     OR NEW.amount        IS DISTINCT FROM OLD.amount
+     OR NEW.message       IS DISTINCT FROM OLD.message THEN
+    RAISE EXCEPTION 'only status can be changed';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS offers_protect_columns ON public.offers;
+CREATE TRIGGER offers_protect_columns
+  BEFORE UPDATE ON public.offers
+  FOR EACH ROW EXECUTE FUNCTION public.protect_offer_columns();
 
 
 -- ------------------------------------------------------------
