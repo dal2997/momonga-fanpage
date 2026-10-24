@@ -6,6 +6,9 @@ function safeNextPath(next: string | null) {
   const v = next.trim();
   if (!v.startsWith("/")) return "/";
   if (v.startsWith("//")) return "/";
+  // 브라우저는 "\\"를 "/"로 취급 → "/\\evil.com" 같은 오픈 리다이렉트 차단
+  if (v.includes("\\")) return "/";
+  if (/[\u0000-\u001f]/.test(v)) return "/";
   if (v.startsWith("/auth/callback")) return "/";
   return v;
 }

@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const { handle } = await req.json().catch(() => ({}));
-    if (!handle || typeof handle !== "string") {
+    if (!handle || typeof handle !== "string" || handle.length > 64) {
       return NextResponse.json({ error: "handle 필요" }, { status: 400 });
     }
 

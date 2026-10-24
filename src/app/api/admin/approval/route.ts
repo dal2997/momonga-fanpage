@@ -7,6 +7,7 @@ import {
   APP_NAME,
   getSiteUrl,
 } from "@/lib/adminUtils";
+import { escapeHtml, isUuid } from "@/lib/security";
 
 export async function POST(req: Request) {
   const res = NextResponse.json({ ok: true });
@@ -14,7 +15,7 @@ export async function POST(req: Request) {
 
   // 1) 세션 확인
   const { data: u, error: ue } = await supabase.auth.getUser();
-  if (ue) return NextResponse.json({ ok: false, error: ue.message }, { status: 401 });
+  if (ue) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   if (!u.user) return NextResponse.json({ ok: false, error: "no session" }, { status: 401 });
 
   // 2) 관리자 체크 (profiles.is_admin)
@@ -24,14 +25,14 @@ export async function POST(req: Request) {
     .eq("id", u.user.id)
     .maybeSingle();
 
-  if (meErr) return NextResponse.json({ ok: false, error: meErr.message }, { status: 403 });
+  if (meErr) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   if (!me?.is_admin) return NextResponse.json({ ok: false, error: "not admin" }, { status: 403 });
 
   const body = await req.json().catch(() => null);
   const action = body?.action as string | undefined;
   const userId = body?.userId as string | undefined;
 
-  if (!action || !userId) {
+  if (!action || !isUuid(userId)) {
     return NextResponse.json({ ok: false, error: "missing action/userId" }, { status: 400 });
   }
 
@@ -77,7 +78,7 @@ export async function POST(req: Request) {
 
     // ── 밴 ────────────────────────────────────────────────────────────────
     if (action === "ban") {
-      const reason = (body?.reason as string | undefined)?.trim() || null;
+      const reason = (typeof body?.reason === "string" ? body.reason.trim().slice(0, 300) : "") || null;
 
       const { error } = await supabase
         .from("profiles")
@@ -147,7 +148,7 @@ export async function POST(req: Request) {
           <h2 style="font-size:20px">Momonga 초대 코드 🐿️</h2>
           <p>아래 코드를 입력하면 수집 기능을 사용할 수 있어요.</p>
           <div style="margin:20px 0;padding:16px 24px;background:#f4f4f4;border-radius:12px;font-size:22px;font-weight:bold;letter-spacing:2px;text-align:center">
-            ${invite.code}
+            ${escapeHtml(invite.code)}
           </div>
           ${siteUrl ? `<div style="margin-top:20px"><a href="${siteUrl}/redeem" style="background:#111;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-size:13px">코드 입력하러 가기</a></div>` : ""}
           <p style="color:#999;font-size:12px;margin-top:24px">이 메일은 관리자가 발송했습니다.</p>

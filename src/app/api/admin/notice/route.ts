@@ -1,6 +1,7 @@
 // src/app/api/admin/notice/route.ts
 import { NextResponse } from "next/server";
 import { makeSupabase, sendWithResend, APP_NAME } from "@/lib/adminUtils";
+import { escapeHtml } from "@/lib/security";
 
 export async function POST(req: Request) {
   const res = NextResponse.json({ ok: true });
@@ -8,7 +9,7 @@ export async function POST(req: Request) {
 
   // 세션 확인
   const { data: u, error: ue } = await supabase.auth.getUser();
-  if (ue) return NextResponse.json({ ok: false, error: ue.message }, { status: 401 });
+  if (ue) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   if (!u.user) return NextResponse.json({ ok: false, error: "no session" }, { status: 401 });
 
   // admin 체크
@@ -18,7 +19,7 @@ export async function POST(req: Request) {
     .eq("id", u.user.id)
     .maybeSingle();
 
-  if (meErr) return NextResponse.json({ ok: false, error: meErr.message }, { status: 403 });
+  if (meErr) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   if (!me?.is_admin) return NextResponse.json({ ok: false, error: "not admin" }, { status: 403 });
 
   const body = await req.json().catch(() => null);
@@ -36,8 +37,8 @@ export async function POST(req: Request) {
   const list = (emails as string[] | null) ?? [];
   const html = `
     <div style="font-family:Arial,sans-serif;line-height:1.6">
-      <h2>${subject}</h2>
-      <div style="white-space:pre-wrap">${content.replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</div>
+      <h2>${escapeHtml(subject)}</h2>
+      <div style="white-space:pre-wrap">${escapeHtml(content)}</div>
       <p style="color:#666;font-size:12px;margin-top:24px">${APP_NAME} 공지</p>
     </div>
   `;
