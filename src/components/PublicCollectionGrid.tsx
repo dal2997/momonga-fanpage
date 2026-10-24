@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import GlassCard from "@/components/layout/GlassCard";
 import type { CollectionRow } from "@/app/u/[handle]/page";
 import OfferModal from "@/components/OfferModal";
+import { safeExternalUrl } from "@/lib/security";
 import type { BrowseItem } from "@/app/browse/page";
 
 function formatPrice(n: number | null | undefined) {
@@ -385,9 +386,9 @@ export default function PublicCollectionGrid({
                     💬 가격 제안하기
                   </button>
 
-                  {selected.link ? (
+                  {safeExternalUrl(selected.link) ? (
                     <a
-                      href={selected.link}
+                      href={safeExternalUrl(selected.link)!}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={stopPropagationOnly}

@@ -2,6 +2,7 @@
 // 오퍼 수락 / 거절 / 완료 처리
 import { NextRequest, NextResponse } from "next/server";
 import { makeSupabase } from "@/lib/adminUtils";
+import { isUuid } from "@/lib/security";
 
 type Status = "accepted" | "rejected" | "completed";
 const VALID_STATUSES: Status[] = ["accepted", "rejected", "completed"];
@@ -12,6 +13,9 @@ export async function PATCH(
 ) {
   const { id } = await params;
   const res = NextResponse.json({ ok: true });
+  if (!isUuid(id)) {
+    return NextResponse.json({ error: "제안을 찾을 수 없어" }, { status: 404 });
+  }
 
   try {
     const body = await req.json();
@@ -64,9 +68,7 @@ export async function PATCH(
 
     return NextResponse.json({ ok: true, status });
   } catch (e: unknown) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "서버 오류" },
-      { status: 500 }
-    );
+    console.error("[offers/:id] error:", e);
+    return NextResponse.json({ error: "서버 오류" }, { status: 500 });
   }
 }

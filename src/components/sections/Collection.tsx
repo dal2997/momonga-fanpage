@@ -23,6 +23,7 @@ import {
 } from "@/lib/storageService";
 import { supabase } from "@/lib/supabase/client";
 import { hashFile } from "@/lib/fileHash";
+import { safeExternalUrl } from "@/lib/security";
 
 type ViewMode = "collecting" | "collected";
 
@@ -579,7 +580,7 @@ export default function Collection() {
         id: crypto.randomUUID(),
         title,
         image,
-        link: addLink.trim() ? addLink.trim() : null,
+        link: safeExternalUrl(addLink),
         originalPrice: parsePrice(addOriginal),
         usedPrice: parsePrice(addUsed),
         status: "collecting",
@@ -703,7 +704,7 @@ export default function Collection() {
       // =========================
       const patch: any = {
         title: editTitle.trim() ? editTitle.trim() : open.title,
-        link: editLink.trim() ? editLink.trim() : null,
+        link: safeExternalUrl(editLink),
         image,
         originalPrice: parsePrice(editOriginal),
         usedPrice: parsePrice(editUsed),
@@ -1489,12 +1490,12 @@ export default function Collection() {
                     </div>
                     <div className="mt-3 text-3xl font-semibold">{open.title}</div>
 
-                    {open.link ? (
+                    {safeExternalUrl(open.link) ? (
                       <a
                         className="mt-2 inline-block text-sm text-white/70 underline underline-offset-4 hover:text-white"
-                        href={open.link}
+                        href={safeExternalUrl(open.link)!}
                         target="_blank"
-                        rel="noreferrer"
+                        rel="noopener noreferrer"
                       >
                         구매/정보 링크 열기
                       </a>
